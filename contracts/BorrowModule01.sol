@@ -3,8 +3,10 @@ pragma solidity ^0.8.0;
 pragma abicoder v2;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./Auth.sol";
 import "./Parameters01.sol";
@@ -75,9 +77,9 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     uint public constant MAX_DURATION_DAYS = 365 * 2;
 
     Loan[] public loans;
-    mapping(address => uint[]) loanIdsByUser;
-    EnumerableSet.UintSet activeAuctions;
-    EnumerableSet.UintSet activeLoans;
+    mapping(address => uint[]) public loanIdsByUser;
+    EnumerableSet.UintSet private activeAuctions;
+    EnumerableSet.UintSet private activeLoans;
 
     constructor(address _parametersStorage) Auth(_parametersStorage) {}
 
@@ -86,7 +88,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         require(0 < _params.interestRateMin && _params.interestRateMin <= _params.interestRateMax, 'INVALID_INTEREST_RATE');
         require(_params.collateral != address(0) && _params.collateralIdOrAmount > 0, 'INVALID_COLLATERAL');
         require(_params.debtCurrency != address(0) && _params.debtAmount > 0, 'INVALID_DEBT_CURRENCY');
-        calcTotalDebt(_params.debtAmount, _params.interestRateMax, _params.durationDays); // just check that there is no overflow on total debt
+        _calcTotalDebt(_params.debtAmount, _params.interestRateMax, _params.durationDays); // just check that there is no overflow on total debt
 
         _loanId = loans.length;
         loans.push(
@@ -135,13 +137,13 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         emit AuctionCancelled(_loanId, msg.sender);
     }
 
+    /**
+     * @dev acceptance after auction ended is allowed
+     */
     function accept(uint _loanId) external nonReentrant {
         Loan storage loan = requireLoan(_loanId);
 
         require(loan.auctionInfo.borrower != msg.sender, 'INVALID_AUCTION_OWNER');
-
-        uint auctionEndTs = loan.auctionInfo.startTS + parameters.getAuctionDuration();
-        require(auctionEndTs > block.timestamp, 'EXPIRED_AUCTION');
 
         changeLoanState(loan, LoanState.Issued);
         require(activeAuctions.remove(_loanId), 'BROKEN_STRUCTURE');
@@ -149,11 +151,11 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
 
         loan.startTS = uint32(block.timestamp);
         loan.lender = msg.sender;
-        loan.interestRate = calcCurrentInterestRate(loan.auctionInfo.startTS, auctionEndTs, loan.auctionInfo.interestRateMin, loan.auctionInfo.interestRateMax);
+        loan.interestRate = _calcCurrentInterestRate(loan.auctionInfo.startTS, loan.auctionInfo.interestRateMin, loan.auctionInfo.interestRateMax);
 
         loanIdsByUser[msg.sender].push(_loanId);
 
-        (uint feeAmount, uint amountWithoutFee) = calcFeeAmount(loan.debtCurrency, loan.debtAmount);
+        (uint feeAmount, uint amountWithoutFee) = _calcFeeAmount(loan.debtCurrency, loan.debtAmount);
 
         Assets01.AssetType.ERC20.getAssetFrom(loan.debtCurrency, feeAmount, msg.sender, parameters.treasury());
         Assets01.AssetType.ERC20.getAssetFrom(loan.debtCurrency, amountWithoutFee, msg.sender, loan.auctionInfo.borrower);
@@ -172,7 +174,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         changeLoanState(loan, LoanState.Finished);
         require(activeLoans.remove(_loanId), 'BROKEN_STRUCTURE');
 
-        uint totalDebt = calcTotalDebt(loan.debtAmount, loan.interestRate, loan.durationDays);
+        uint totalDebt = _calcTotalDebt(loan.debtAmount, loan.interestRate, loan.durationDays);
         Assets01.AssetType.ERC20.getAssetFrom(loan.debtCurrency, totalDebt, msg.sender, loan.lender);
         loan.collateralType.sendAssetTo(loan.collateral, loan.collateralIdOrAmount, loan.auctionInfo.borrower);
 
@@ -225,13 +227,18 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         return loans;
     }
 
-    function getLoans(uint _offset, uint _limit) external view returns(Loan[] memory _loans) {
-        _loans = new Loan[](_limit);
+    /**
+     * @dev returns empty array with offset >= count
+     */
+    function getLoansLimited(uint _offset, uint _limit) external view returns(Loan[] memory _loans) {
         uint loansCount = loans.length;
-        for (uint i = 0; i < _limit; i++) {
-            if (_offset + i >= loansCount) {
-                break;
-            }
+        if (_offset > loansCount) {
+            return new Loan[](0);
+        }
+
+        uint resultCount = Math.min(loansCount - _offset, _limit);
+        _loans = new Loan[](resultCount);
+        for (uint i = 0; i < resultCount; i++) {
             _loans[i] = loans[_offset + i];
         }
     }
@@ -246,29 +253,14 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
      * @dev may not work on huge amount of loans, in this case use version with limits
      */
     function getActiveAuctions() public view returns (uint[] memory _ids, Loan[] memory _loans) {
-        _ids = activeAuctions.values();
-        _loans = new Loan[](_ids.length);
-        for (uint i=0; i<_ids.length; i++) {
-            _loans[i] = loans[ _ids[i] ];
-        }
+        return _getLoansWithIds(activeAuctions);
     }
 
-    function getActiveAuctions(uint _offset, uint _limit) public view returns (uint[] memory _ids, Loan[] memory _loans) {
-        _ids = new uint[](_limit);
-        _loans = new Loan[](_limit);
-        uint activeAuctionsCount = activeAuctions.length();
-        for (uint i = 0; i < _limit; i++) {
-            if (_offset + i >= activeAuctionsCount) {
-                break;
-            }
-            _ids[i] = activeAuctions.at(i);
-            _loans[i] = loans[ _ids[i] ];
-        }
-    }
-
-    function getActiveAuction(uint _index) public view returns (uint _id, Loan memory _loan) {
-        _id = activeAuctions.at(_index);
-        _loan = loans[ _id ];
+    /**
+     * @dev returns empty arrays with offset >= count
+     */
+    function getActiveAuctionsLimited(uint _offset, uint _limit) public view returns (uint[] memory _ids, Loan[] memory _loans) {
+        return _getLoansWithIdsLimited(activeAuctions, _offset, _limit);
     }
 
     //////
@@ -281,46 +273,108 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
      * @dev may not work on huge amount of loans, in this case use version with limits
      */
     function getActiveLoans() public view returns (uint[] memory _ids, Loan[] memory _loans) {
-        _ids = activeLoans.values();
+        return _getLoansWithIds(activeLoans);
+    }
+
+    /**
+     * @dev returns empty arrays with offset >= count
+     */
+    function getActiveLoansLimited(uint _offset, uint _limit) public view returns (uint[] memory _ids, Loan[] memory _loans) {
+        return _getLoansWithIdsLimited(activeLoans, _offset, _limit);
+    }
+
+    //////
+
+    function getUserLoansCount(address _user) public view returns (uint) {
+        return loanIdsByUser[_user].length;
+    }
+
+    /**
+     * @dev may not work on huge amount of loans, in this case use version with limits
+     */
+    function getUserLoans(address _user) external view returns(uint[] memory _ids, Loan[] memory _loans) {
+        _ids = loanIdsByUser[_user];
         _loans = new Loan[](_ids.length);
         for (uint i=0; i<_ids.length; i++) {
             _loans[i] = loans[ _ids[i] ];
         }
     }
 
-    function getActiveLoans(uint _offset, uint _limit) public view returns (uint[] memory _ids, Loan[] memory _loans) {
-        _ids = new uint[](_limit);
-        _loans = new Loan[](_limit);
-        uint activeLoansCount = activeLoans.length();
-        for (uint i = 0; i < _limit; i++) {
-            if (_offset + i >= activeLoansCount) {
-                break;
-            }
-            _ids[i] = activeLoans.at(i);
+    /**
+     * @dev returns empty arrays with offset >= count
+     */
+    function getUserLoansLimited(address _user, uint _offset, uint _limit) public view returns (uint[] memory _ids, Loan[] memory _loans) {
+        uint loansCount = loanIdsByUser[_user].length;
+        if (_offset > loansCount) {
+            return (new uint[](0), new Loan[](0));
+        }
+
+        uint resultCount = Math.min(loansCount - _offset, _limit);
+        _ids = new uint[](resultCount);
+        _loans = new Loan[](resultCount);
+        for (uint i = 0; i < resultCount; i++) {
+            _ids[i] = loanIdsByUser[_user][_offset + i];
             _loans[i] = loans[ _ids[i] ];
         }
     }
 
-    function getActiveLoan(uint _index) public view returns (uint _id, Loan memory _loan) {
-        _id = activeLoans.at(_index);
-        _loan = loans[ _id ];
-    }
 
     //////
 
-    function calcFeeAmount(address _asset, uint _amount) internal view returns (uint _feeAmount, uint _amountWithoutFee) {
+    function _calcFeeAmount(address _asset, uint _amount) internal view returns (uint _feeAmount, uint _amountWithoutFee) {
         uint feeBasisPoints = parameters.getAssetFee(_asset);
         _feeAmount = _amount * feeBasisPoints / BASIS_POINTS_IN_1;
         _amountWithoutFee = _amount - _feeAmount;
     }
 
-    function calcTotalDebt(uint debtAmount, uint interestRate, uint durationDays) internal pure returns (uint) {
+    function _calcTotalDebt(uint debtAmount, uint interestRate, uint durationDays) internal pure returns (uint) {
         return debtAmount + debtAmount * interestRate * durationDays * 1 days / BASIS_POINTS_IN_1 / 365 days;
     }
 
-    function calcCurrentInterestRate(uint auctionStartTS, uint auctionEndTs, uint16 interestRateMin, uint16 interestRateMax) internal view returns (uint16) {
-        require(auctionStartTS <= block.timestamp && block.timestamp <= auctionEndTs, 'BROKEN_LOGIC');
+    function _calcCurrentInterestRate(uint auctionStartTS, uint16 interestRateMin, uint16 interestRateMax) internal view returns (uint16) {
+        require(auctionStartTS < block.timestamp, 'TOO_EARLY');
 
-        return interestRateMin + uint16((interestRateMax - interestRateMin) * (block.timestamp - auctionStartTS) / (auctionEndTs - auctionStartTS));
+        uint auctionEndTs = auctionStartTS + parameters.getAuctionDuration();
+        uint onTime = Math.min(block.timestamp, auctionEndTs);
+
+        return interestRateMin + uint16((interestRateMax - interestRateMin) * (onTime - auctionStartTS) / (auctionEndTs - auctionStartTS));
+    }
+
+    //////
+
+    function _getLoansWithIds(EnumerableSet.UintSet storage _loansSet) internal view returns (uint[] memory _ids, Loan[] memory _loans) {
+        _ids = _loansSet.values();
+        _loans = new Loan[](_ids.length);
+        for (uint i=0; i<_ids.length; i++) {
+            _loans[i] = loans[ _ids[i] ];
+        }
+    }
+
+    function _getLoansWithIdsLimited(EnumerableSet.UintSet storage _loansSet, uint _offset, uint _limit) internal view returns (uint[] memory _ids, Loan[] memory _loans) {
+        uint loansCount = _loansSet.length();
+        if (_offset > loansCount) {
+            return (new uint[](0), new Loan[](0));
+        }
+
+        uint resultCount = Math.min(loansCount - _offset, _limit);
+        _ids = new uint[](resultCount);
+        _loans = new Loan[](resultCount);
+        for (uint i = 0; i < resultCount; i++) {
+            _ids[i] = _loansSet.at(_offset + i);
+            _loans[i] = loans[ _ids[i] ];
+        }
+    }
+
+    //////
+
+    function onERC721Received(
+        address operator,
+        address /* from */,
+        uint256 /* tokenId */,
+        bytes calldata /* data */
+    ) external view returns (bytes4) {
+        require(operator == address(this), "TRANSFER_NOT_ALLOWED");
+
+        return IERC721Receiver.onERC721Received.selector;
     }
 }

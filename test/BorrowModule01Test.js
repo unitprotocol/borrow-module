@@ -1,5 +1,7 @@
-const { expect } = require("chai");
+const { expect, assert } = require("chai");
 const { ethers } = require("hardhat");
+
+const lodash = require('lodash');
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const ONE = "0x0000000000000000000000000000000000000001";
@@ -12,6 +14,14 @@ const UINT_MAX = BN(2).pow(256).sub(1);
 const COLLATERAL_TYPE_ERC20 = 0;
 const COLLATERAL_TYPE_ERC721 = 1;
 
+const STATE_WAS_NOT_CREATED = 0;
+const STATE_AUCTION_STARTED = 1;
+const STATE_AUCTION_CANCELLED = 2;
+const STATE_ISSUED = 3;
+const STATE_FINISHED = 4;
+const STATE_LIQUIDATED = 5;
+
+
 const PARAM_AUCTION_DURATION = 0;
 
 let context;
@@ -20,17 +30,17 @@ let context;
 describe("BorrowModule01", function () {
     beforeEach(async function () {
         context = this;
-        [this.deployer, this.user1, this.user2, this.user3, this.treasury] = await ethers.getSigners();
+        [this.deployer, this.borrower1, this.borrower2, this.lender1, this.lender2, this.treasury] = await ethers.getSigners();
 
         this.erc20token1 = await deployContract("ERC20Token", UINT_MAX);
         this.erc20token2 = await deployContract("ERC20Token", UINT_MAX);
         this.erc20token3 = await deployContract("ERC20Token", UINT_MAX);
         this.erc20token4 = await deployContract("ERC20Token", UINT_MAX);
 
-        this.erc721token1 = await deployContract("ERC721Token");
-        this.erc721token2 = await deployContract("ERC721Token");
-        this.erc721token3 = await deployContract("ERC721Token");
-        this.erc721token4 = await deployContract("ERC721Token");
+        this.erc721token1 = updateERC721(await deployContract("ERC721Token"));
+        this.erc721token2 = updateERC721(await deployContract("ERC721Token"));
+        this.erc721token3 = updateERC721(await deployContract("ERC721Token"));
+        this.erc721token4 = updateERC721(await deployContract("ERC721Token"));
 
         this.parameters = await deployContract("ParametersStorage", this.treasury.address);
         await this.parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, 8 * 3600);
@@ -38,76 +48,383 @@ describe("BorrowModule01", function () {
         this.module = await deployContract("BorrowModule01", this.parameters.address);
     });
 
+    it("borrow module interfaces", async function () {
+        await expect(
+            this.erc721token1.safeTransferFrom(this.deployer.address, this.module.address, 1)
+		).to.be.revertedWith("TRANSFER_NOT_ALLOWED");
+    })
+
     it("startAuction edge cases", async function () {
-        await this.erc20token1.transfer(this.user1.address, UINT_MAX);
-        await this.erc20token1.connect(this.user1).approve(this.module.address, UINT_MAX);
+        await this.erc20token1.transfer(this.borrower1.address, UINT_MAX);
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, UINT_MAX);
 
         ///////////
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({durationDays: 0}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({durationDays: 0}))
 		).to.be.revertedWith("INVALID_LOAN_DURATION");
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({durationDays: 731}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({durationDays: 731}))
 		).to.be.revertedWith("INVALID_LOAN_DURATION");
 
-        await this.module.connect(this.user1).startAuction(AuctionStartParams({durationDays: 1}));
-        await this.module.connect(this.user1).startAuction(AuctionStartParams({durationDays: 730}));
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({durationDays: 1}));
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({durationDays: 730}));
 
         ///////////
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({interestRateMin: 0}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({interestRateMin: 0}))
 		).to.be.revertedWith("INVALID_INTEREST_RATE");
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({interestRateMax: 0}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({interestRateMax: 0}))
 		).to.be.revertedWith("INVALID_INTEREST_RATE");
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({interestRateMin: 11, interestRateMax: 10}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({interestRateMin: 11, interestRateMax: 10}))
 		).to.be.revertedWith("INVALID_INTEREST_RATE");
 
-        await this.module.connect(this.user1).startAuction(AuctionStartParams({interestRateMin: 1, interestRateMax: 1}));
-        await this.module.connect(this.user1).startAuction(AuctionStartParams({interestRateMin: 1, interestRateMax: 65535}));
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({interestRateMin: 1, interestRateMax: 1}));
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({interestRateMin: 1, interestRateMax: 65535}));
 
         ///////////
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({collateral: ZERO}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateral: ZERO}))
 		).to.be.revertedWith("INVALID_COLLATERAL");
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({collateralIdOrAmount: 0}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralIdOrAmount: 0}))
 		).to.be.revertedWith("INVALID_COLLATERAL");
 
-        await this.module.connect(this.user1).startAuction(AuctionStartParams({collateralIdOrAmount: 1}));
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralIdOrAmount: 1}));
 
-        await this.erc20token2.transfer(this.user1.address, UINT_MAX);
-        await this.erc20token2.connect(this.user1).approve(this.module.address, UINT_MAX);
-        await this.module.connect(this.user1).startAuction(AuctionStartParams({collateral: this.erc20token2.address, collateralIdOrAmount: UINT_MAX}));
+        await this.erc20token2.transfer(this.borrower1.address, UINT_MAX);
+        await this.erc20token2.connect(this.borrower1).approve(this.module.address, UINT_MAX);
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateral: this.erc20token2.address, collateralIdOrAmount: UINT_MAX}));
 
         ///////////
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({debtCurrency: ZERO}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({debtCurrency: ZERO}))
 		).to.be.revertedWith("INVALID_DEBT_CURRENCY");
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({debtAmount: 0}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({debtAmount: 0}))
 		).to.be.revertedWith("INVALID_DEBT_CURRENCY");
 
-        await this.module.connect(this.user1).startAuction(AuctionStartParams({debtAmount: 1}));
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({debtAmount: 1}));
 
         await expect(
-			this.module.connect(this.user1).startAuction(AuctionStartParams({debtAmount: UINT_MAX}))
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({debtAmount: UINT_MAX}))
 		).to.be.revertedWith("Arithmetic operation underflowed or overflowed");
 
+        ///////////
+        await expect(
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralType: COLLATERAL_TYPE_ERC721}))
+		).to.be.revertedWith("INCORRECT_ASSET_TYPE");
+
+        await expect(
+			this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams({collateralType: COLLATERAL_TYPE_ERC20}))
+		).to.be.revertedWith("INCORRECT_ASSET_TYPE");
+    });
+
+    it("start auctions and check", async function () {
+        await this.erc20token1.transfer(this.borrower1.address, ether(50));
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(50));
+        await this.erc20token1.transfer(this.borrower2.address, ether(50));
+        await this.erc20token1.connect(this.borrower2).approve(this.module.address, ether(50));
+        await this.erc20token2.transfer(this.borrower1.address, ether(50));
+        await this.erc20token2.connect(this.borrower1).approve(this.module.address, ether(50));
+
+        await this.erc721token1.safeTransferFrom(this.deployer.address, this.borrower1.address, 1);
+        await this.erc721token1.connect(this.borrower1).approve(this.module.address, 1);
+        await this.erc721token1.safeTransferFrom(this.deployer.address, this.borrower2.address, 2);
+        await this.erc721token1.connect(this.borrower2).approve(this.module.address, 2);
+        await this.erc721token2.safeTransferFrom(this.deployer.address, this.borrower1.address, 1);
+        await this.erc721token2.connect(this.borrower1).approve(this.module.address, 1);
+
+        ///// initial checks od state
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(0)
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(50))
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
+
+        expect(await this.module.getLoansCount()).to.equal(0);
+        expect(await this.module.getLoans()).to.deep.equal([])
+
+        expect(await this.module.getActiveAuctionsCount()).to.equal(0);
+        expect(normalize(await this.module.getActiveAuctions())).to.deep.equal([[], []])
+
+        expect(await this.module.getActiveLoansCount()).to.equal(0);
+        expect(normalize(await this.module.getActiveLoans())).to.deep.equal([[], []])
+
+        expect(await this.module.getUserLoansCount(this.borrower1.address)).to.equal(0);
+        expect(normalize(await this.module.getUserLoans(this.borrower1.address))).to.deep.equal([[], []]);
+
+        expect(await this.module.getUserLoansCount(this.borrower2.address)).to.equal(0);
+        expect(normalize(await this.module.getUserLoans(this.borrower2.address))).to.deep.equal([[], []]);
+
+        ///// start auction with erc20 collateral
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        const loan0 = await ERC20Auction();
+
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(ether(1))
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(49))
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
+
+        expect(await this.module.getLoansCount()).to.equal(1);
+        expect(normalize(await this.module.getLoans())).to.deep.equal([loan0])
+        assert.deepEqual(toDict(await this.module.loans(0)), loan0)
+
+        expect(await this.module.getActiveAuctionsCount()).to.equal(1);
+        expect(normalize(await this.module.getActiveAuctions())).to.deep.equal([[0], [loan0]])
+
+        expect(await this.module.getActiveLoansCount()).to.equal(0);
+        expect(normalize(await this.module.getActiveLoans())).to.deep.equal([[], []])
+
+        expect(await this.module.getUserLoansCount(this.borrower1.address)).to.equal(1);
+        expect(normalize(await this.module.getUserLoans(this.borrower1.address))).to.deep.equal([[0], [loan0]]);
+
+        expect(await this.module.getUserLoansCount(this.borrower2.address)).to.equal(0);
+        expect(normalize(await this.module.getUserLoans(this.borrower2.address))).to.deep.equal([[], []]);
+
+
+        ///// start auction with erc721 collateral
+        await this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams());
+        const loan1 = await ERC721Auction();
+
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(ether(1))
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(49))
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.module.address)
+
+        expect(await this.module.getLoansCount()).to.equal(2);
+        expect(normalize(await this.module.getLoans())).to.deep.equal([loan0, loan1])
+        assert.deepEqual(toDict(await this.module.loans(0)), loan0)
+        assert.deepEqual(toDict(await this.module.loans(1)), loan1)
+
+        expect(await this.module.getActiveAuctionsCount()).to.equal(2);
+        expect(normalize(await this.module.getActiveAuctions())).to.deep.equal([[0, 1], [loan0, loan1]])
+
+        expect(await this.module.getActiveLoansCount()).to.equal(0);
+        expect(normalize(await this.module.getActiveLoans())).to.deep.equal([[], []])
+
+        expect(await this.module.getUserLoansCount(this.borrower1.address)).to.equal(2);
+        expect(normalize(await this.module.getUserLoans(this.borrower1.address))).to.deep.equal([[0, 1], [loan0, loan1]]);
+
+        expect(await this.module.getUserLoansCount(this.borrower2.address)).to.equal(0);
+        expect(normalize(await this.module.getUserLoans(this.borrower2.address))).to.deep.equal([[], []]);
+
+        /////
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        const loan2 = await ERC20Auction();
+
+        await this.module.connect(this.borrower2).startAuction(ERC20AuctionStartParams());
+        const loan3 = await ERC20Auction({auctionInfo: {borrower: this.borrower2.address}});
+        await this.module.connect(this.borrower2).startAuction(ERC721AuctionStartParams({collateralIdOrAmount: 2}));
+        const loan4 = await ERC721Auction({auctionInfo: {borrower: this.borrower2.address}, collateralIdOrAmount: BN(2)});
+
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateral: this.erc20token2.address}));
+        const loan5 = await ERC20Auction({collateral: this.erc20token2.address});
+        await this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams({collateral: this.erc721token2.address}));
+        const loan6 = await ERC721Auction({collateral: this.erc721token2.address});
+
+
+        expect(await this.module.getLoansCount()).to.equal(7);
+        expect(normalize(await this.module.getLoans())).to.deep.equal([loan0, loan1, loan2, loan3, loan4, loan5, loan6])
+        assert.deepEqual(toDict(await this.module.loans(0)), loan0)
+        assert.deepEqual(toDict(await this.module.loans(1)), loan1)
+        assert.deepEqual(toDict(await this.module.loans(6)), loan6)
+
+        expect(await this.module.getActiveAuctionsCount()).to.equal(7);
+        expect(normalize(await this.module.getActiveAuctions())).to.deep.equal([[0, 1, 2, 3, 4, 5, 6], [loan0, loan1, loan2, loan3, loan4, loan5, loan6]])
+
+        expect(await this.module.getActiveLoansCount()).to.equal(0);
+        expect(normalize(await this.module.getActiveLoans())).to.deep.equal([[], []])
+
+        expect(await this.module.getUserLoansCount(this.borrower1.address)).to.equal(5);
+        expect(normalize(await this.module.getUserLoans(this.borrower1.address))).to.deep.equal([[0, 1, 2, 5, 6], [loan0, loan1, loan2, loan5, loan6]]);
+
+        expect(await this.module.getUserLoansCount(this.borrower2.address)).to.equal(2);
+        expect(normalize(await this.module.getUserLoans(this.borrower2.address))).to.deep.equal([[3, 4], [loan3, loan4]]);
+
+        ///// limited
+        expect(normalize(await this.module.getLoansLimited(0, 7))).to.deep.equal([loan0, loan1, loan2, loan3, loan4, loan5, loan6])
+        expect(normalize(await this.module.getLoansLimited(0, 8))).to.deep.equal([loan0, loan1, loan2, loan3, loan4, loan5, loan6])
+        expect(normalize(await this.module.getLoansLimited(1, 8))).to.deep.equal([loan1, loan2, loan3, loan4, loan5, loan6])
+        expect(normalize(await this.module.getLoansLimited(1, 30))).to.deep.equal([loan1, loan2, loan3, loan4, loan5, loan6])
+        expect(normalize(await this.module.getLoansLimited(5, 1))).to.deep.equal([loan5])
+        expect(normalize(await this.module.getLoansLimited(5, 2))).to.deep.equal([loan5, loan6])
+        expect(normalize(await this.module.getLoansLimited(5, 3))).to.deep.equal([loan5, loan6])
+        expect(normalize(await this.module.getLoansLimited(6, 2))).to.deep.equal([loan6])
+        expect(normalize(await this.module.getLoansLimited(0, 0))).to.deep.equal([])
+        expect(normalize(await this.module.getLoansLimited(7, 2))).to.deep.equal([])
+        expect(normalize(await this.module.getLoansLimited(8, 2))).to.deep.equal([])
+
+        expect(normalize(await this.module.getActiveAuctionsLimited(0, 7))).to.deep.equal([[0, 1, 2, 3, 4, 5, 6], [loan0, loan1, loan2, loan3, loan4, loan5, loan6]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(0, 8))).to.deep.equal([[0, 1, 2, 3, 4, 5, 6], [loan0, loan1, loan2, loan3, loan4, loan5, loan6]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(1, 8))).to.deep.equal([[1, 2, 3, 4, 5, 6], [loan1, loan2, loan3, loan4, loan5, loan6]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(1, 30))).to.deep.equal([[1, 2, 3, 4, 5, 6], [loan1, loan2, loan3, loan4, loan5, loan6]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(5, 1))).to.deep.equal([[5], [loan5]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(5, 2))).to.deep.equal([[5, 6], [loan5, loan6]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(5, 3))).to.deep.equal([[5, 6], [loan5, loan6]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(6, 2))).to.deep.equal([[6], [loan6]])
+        expect(normalize(await this.module.getActiveAuctionsLimited(0, 0))).to.deep.equal([[], []])
+        expect(normalize(await this.module.getActiveAuctionsLimited(7, 2))).to.deep.equal([[], []])
+        expect(normalize(await this.module.getActiveAuctionsLimited(8, 2))).to.deep.equal([[], []])
+
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 0, 5))).to.deep.equal([[0, 1, 2, 5, 6], [loan0, loan1, loan2, loan5, loan6]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 0, 6))).to.deep.equal([[0, 1, 2, 5, 6], [loan0, loan1, loan2, loan5, loan6]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 1, 6))).to.deep.equal([[1, 2, 5, 6], [loan1, loan2, loan5, loan6]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 1, 30))).to.deep.equal([[1, 2, 5, 6], [loan1, loan2, loan5, loan6]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 3, 1))).to.deep.equal([[5], [loan5]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 3, 2))).to.deep.equal([[5, 6], [loan5, loan6]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 3, 3))).to.deep.equal([[5, 6], [loan5, loan6]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 4, 2))).to.deep.equal([[6], [loan6]]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 0, 0))).to.deep.equal([[], []]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 5, 2))).to.deep.equal([[], []]);
+        expect(normalize(await this.module.getUserLoansLimited(this.borrower1.address, 6, 2))).to.deep.equal([[], []]);
     })
+
+    it("cancelAuction edge cases", async function () {
+        // for collateral
+        await this.erc20token1.transfer(this.borrower1.address, ether(10000));
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(10000));
+
+        // for accept auction
+        await this.erc20token2.transfer(this.lender1.address, ether(10000));
+        await this.erc20token2.connect(this.lender1).approve(this.module.address, ether(10000));
+
+        // for repay
+        await this.erc20token2.transfer(this.borrower1.address, ether(10000));
+        await this.erc20token2.connect(this.borrower1).approve(this.module.address, ether(10000));
+
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+
+        ///////////
+
+        await expect(
+			this.module.connect(this.borrower1).cancelAuction(1)
+		).to.be.revertedWith("INVALID_LOAN_ID");
+
+        await expect(
+			this.module.connect(this.borrower2).cancelAuction(0)
+		).to.be.revertedWith("AUTH_FAILED");
+
+        /////////// cancel already cancelled
+        await this.module.connect(this.borrower1).cancelAuction(0)
+        await expect(
+			this.module.connect(this.borrower1).cancelAuction(0)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// cancel issued
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await this.module.connect(this.lender1).accept(1);
+        await expect(
+			this.module.connect(this.borrower1).cancelAuction(1)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// cancel finished
+        await this.module.connect(this.borrower1).repay(1);
+        await expect(
+			this.module.connect(this.borrower1).cancelAuction(1)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// cancel liquidated
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await this.module.connect(this.lender1).accept(2);
+        await network.provider.send("evm_increaseTime", [31*24*3600]);
+        await network.provider.send("evm_mine");
+        await this.module.connect(this.lender1).liquidate(2);
+        await expect(
+			this.module.connect(this.borrower1).cancelAuction(2)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+    });
+
+    it("cancelAuction", async function () {
+        await this.erc20token1.transfer(this.borrower1.address, ether(50));
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(50));
+
+        await this.erc721token1.safeTransferFrom(this.deployer.address, this.borrower1.address, 1);
+        await this.erc721token1.connect(this.borrower1).approve(this.module.address, 1);
+
+        ///// initial checks od state
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(0)
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(50))
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
+
+        ///// erc20 collateral
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        const loan0 = await ERC20Auction({state: STATE_AUCTION_CANCELLED});
+
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(ether(1))
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(49))
+        expect(await this.module.getActiveAuctionsCount()).to.equal(1);
+
+        await this.module.connect(this.borrower1).cancelAuction(0)
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(ether(0))
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(50))
+        expect(await this.module.getActiveAuctionsCount()).to.equal(0);
+        expect(toDict(await this.module.loans(0))).to.deep.equal(loan0)
+
+
+        ///// erc721 collateral
+        await this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams());
+        const loan1 = await ERC721Auction({state: STATE_AUCTION_CANCELLED});
+
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.module.address)
+        expect(await this.module.getActiveAuctionsCount()).to.equal(1);
+
+        await this.module.connect(this.borrower1).cancelAuction(1);
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
+        expect(await this.module.getActiveAuctionsCount()).to.equal(0);
+        expect(toDict(await this.module.loans(1))).to.deep.equal(loan1)
+
+
+    });
+
+
 });
 
-function AuctionStartParams(params) {
+async function ERC20Auction(valuesToReplace = {}) {
+
+    return lodash.merge(
+        {
+            auctionInfo: {
+                borrower: context.borrower1.address,
+                startTS: await getBlockTs(),
+                interestRateMin: 100,
+                interestRateMax: 1000,
+            },
+            state: STATE_AUCTION_STARTED,
+            collateralType: COLLATERAL_TYPE_ERC20,
+            durationDays: 30,
+            startTS: 0,
+            interestRate: 0,
+            collateral: context.erc20token1.address,
+            collateralIdOrAmount: ether(1),
+            lender: ZERO,
+            debtCurrency: context.erc20token2.address,
+            debtAmount: ether(0.5),
+        },
+        valuesToReplace
+    )
+}
+
+async function ERC721Auction(valuesToReplace = {}) {
+    return lodash.merge(
+        await ERC20Auction(),
+        {
+            collateralType: COLLATERAL_TYPE_ERC721,
+            collateral: context.erc721token1.address,
+            collateralIdOrAmount: BN(1),
+        },
+        valuesToReplace
+    )
+}
+
+
+function ERC20AuctionStartParams(paramsToReplace) {
     const template = {
         collateralType: COLLATERAL_TYPE_ERC20,
         durationDays: 30,
@@ -122,7 +439,20 @@ function AuctionStartParams(params) {
         debtAmount: ether('0.5')
     }
 
-    return {...template, ...params}
+    return {...template, ...paramsToReplace}
+}
+
+function ERC721AuctionStartParams(paramsToReplace) {
+
+    return {
+        ...ERC20AuctionStartParams(),
+        ... {
+            collateralType: COLLATERAL_TYPE_ERC721,
+            collateral: context.erc721token1.address,
+            collateralIdOrAmount: 1,
+        },
+        ...paramsToReplace
+    }
 }
 
 async function deployContract(contract, ...params) {
@@ -133,3 +463,38 @@ async function deployContract(contract, ...params) {
     return instance;
 }
 
+async function getBlockTs(blockNumber = null) {
+    return (await ethers.provider.getBlock(blockNumber ?? await ethers.provider.getBlockNumber())).timestamp;
+}
+
+function toDict(ethersResult) {
+    if (!Array.isArray(ethersResult)) {
+        return;
+    }
+    return Object.fromEntries(
+        Object.entries({...ethersResult})
+            .filter(([k, v]) => isNaN(k))
+            .map(([k, v]) => Array.isArray(v) ? [k, toDict(v)] : [k, v])
+    );
+}
+
+// not very consistent method for normalization of array of loans or [ids, loans] struct
+// array if loans - num keys from loans is removed
+// [ids, loans] -> string keys '_ids' and '_loans' is removed, internal loans are normalized
+function normalize(returnedStruct) {
+    if (returnedStruct._ids !== undefined) {
+        returnedStruct = [returnedStruct[0].map(x=>x.toNumber()), returnedStruct[1].map(toDict)]
+    } else {
+        returnedStruct = returnedStruct.map(toDict)
+    }
+    return returnedStruct
+}
+
+/**
+ * add some shortcuts
+ * @param contract
+ */
+function updateERC721(contract) {
+    contract.safeTransferFrom = contract['safeTransferFrom(address,address,uint256)']
+    return contract
+}
