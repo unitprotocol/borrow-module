@@ -143,7 +143,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     function accept(uint _loanId) external nonReentrant {
         Loan storage loan = requireLoan(_loanId);
 
-        require(loan.auctionInfo.borrower != msg.sender, 'INVALID_AUCTION_OWNER');
+        require(loan.auctionInfo.borrower != msg.sender, 'OWN_AUCTION');
 
         changeLoanState(loan, LoanState.Issued);
         require(activeAuctions.remove(_loanId), 'BROKEN_STRUCTURE');
@@ -327,12 +327,13 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         _amountWithoutFee = _amount - _feeAmount;
     }
 
-    function _calcTotalDebt(uint debtAmount, uint interestRate, uint durationDays) internal pure returns (uint) {
-        return debtAmount + debtAmount * interestRate * durationDays * 1 days / BASIS_POINTS_IN_1 / 365 days;
+    function _calcTotalDebt(uint debtAmount, uint interestRateBasisPoints, uint durationDays) internal pure returns (uint) {
+        return debtAmount + debtAmount * interestRateBasisPoints * durationDays * 1 days / BASIS_POINTS_IN_1 / 365 days;
     }
 
     function _calcCurrentInterestRate(uint auctionStartTS, uint16 interestRateMin, uint16 interestRateMax) internal view returns (uint16) {
         require(auctionStartTS < block.timestamp, 'TOO_EARLY');
+        require(0 < interestRateMin && interestRateMin <= interestRateMax, 'INVALID_INTEREST_RATES'); // assert
 
         uint auctionEndTs = auctionStartTS + parameters.getAuctionDuration();
         uint onTime = Math.min(block.timestamp, auctionEndTs);
