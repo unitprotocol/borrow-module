@@ -438,7 +438,7 @@ describe("BorrowModule01", function () {
 		).to.be.revertedWith("INVALID_LOAN_STATE");
     });
 
-    it.only("accept", async function () {
+    it("accept", async function () {
         await this.erc20token1.transfer(this.borrower1.address, ether(50));
         await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(50));
 
@@ -495,6 +495,126 @@ describe("BorrowModule01", function () {
 
         expect(normalize(await this.module.getLoans())).to.deep.equal([loan0, loan1])
         expect(normalize(await this.module.getActiveLoans())).to.deep.equal([[0, 1], [loan0, loan1]])
+        expect(normalize(await this.module.getUserLoans(this.borrower1.address))).to.deep.equal([[0, 1], [loan0, loan1]])
+        expect(normalize(await this.module.getUserLoans(this.lender1.address))).to.deep.equal([[0, 1], [loan0, loan1]])
+    });
+
+    it("repay edge cases", async function () {
+        // for collateral
+        await this.erc20token1.transfer(this.borrower1.address, ether(10000));
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(10000));
+
+        // for accept auction
+        await this.erc20token2.transfer(this.lender1.address, ether(10000));
+        await this.erc20token2.connect(this.lender1).approve(this.module.address, ether(10000));
+
+        // for repay
+        await this.erc20token2.transfer(this.borrower1.address, ether(10000));
+        await this.erc20token2.connect(this.borrower1).approve(this.module.address, ether(10000));
+
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+
+        ///////////
+
+        await expect(
+			this.module.connect(this.lender1).repay(1)
+		).to.be.revertedWith("INVALID_LOAN_ID");
+
+        /////////// repay not started
+        await expect(
+			this.module.connect(this.borrower1).repay(0)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// repay cancelled
+        await this.module.connect(this.borrower1).cancelAuction(0)
+        await expect(
+			this.module.connect(this.borrower1).repay(0)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// repay accepted but with invalid user
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await this.module.connect(this.lender1).accept(1);
+        await expect(
+			this.module.connect(this.borrower2).repay(1)
+		).to.be.revertedWith("AUTH_FAILED");
+
+        /////////// repay finished
+        await this.module.connect(this.borrower1).repay(1);
+        await expect(
+			this.module.connect(this.borrower1).repay(1)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// cancel liquidated
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await this.module.connect(this.lender1).accept(2);
+        await network.provider.send("evm_increaseTime", [31*24*3600]);
+        await network.provider.send("evm_mine");
+        await this.module.connect(this.lender1).liquidate(2);
+        await expect(
+			this.module.connect(this.borrower1).repay(2)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+    });
+
+    it.only("repay", async function () {
+        await this.erc20token1.transfer(this.borrower1.address, ether(50));
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(50));
+
+        await this.erc20token2.transfer(this.lender1.address, ether(50));
+        await this.erc20token2.connect(this.lender1).approve(this.module.address, ether(50));
+        await this.erc20token2.transfer(this.borrower1.address, ether(50));
+        await this.erc20token2.connect(this.borrower1).approve(this.module.address, ether(50));
+
+        await this.erc721token1.safeTransferFrom(this.deployer.address, this.borrower1.address, 1);
+        await this.erc721token1.connect(this.borrower1).approve(this.module.address, 1);
+
+        ///// initial checks of state
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(0)
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(50))
+        expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether(50))
+        expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(0)
+        expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50))
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
+
+        expect(await this.module.getActiveAuctionsCount()).to.equal(0);
+        expect(await this.module.getActiveLoansCount()).to.equal(0);
+
+        ///// erc20 collateral
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await this.module.connect(this.lender1).accept(0);
+        const loan0 = await ERC20Loan({state: STATE_FINISHED});
+        await this.module.connect(this.borrower1).repay(0);
+
+        expect(await this.erc20token1.balanceOf(this.module.address)).to.equal(0)
+        expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(50)) // returned
+        expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether('49.945')) // sub interest (0.05) and fee (0.005)
+        expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
+        expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50.05))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.005))
+
+        expect(await this.module.getActiveAuctionsCount()).to.equal(0);
+        expect(await this.module.getActiveLoansCount()).to.equal(0);
+
+        expect(normalize(await this.module.getLoans())).to.deep.equal([loan0])
+        expect(normalize(await this.module.getUserLoans(this.borrower1.address))).to.deep.equal([[0], [loan0]])
+        expect(normalize(await this.module.getUserLoans(this.lender1.address))).to.deep.equal([[0], [loan0]])
+
+        ///// erc721 collateral
+        await this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams());
+        await this.module.connect(this.lender1).accept(1);
+        const loan1 = await ERC721Loan({state: STATE_FINISHED});
+        await this.module.connect(this.borrower1).repay(1);
+
+        expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
+        expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether('49.89')) // sub interest (0.05) and fee (0.005)
+        expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
+        expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50.1))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.01))
+
+        expect(await this.module.getActiveAuctionsCount()).to.equal(0);
+        expect(await this.module.getActiveLoansCount()).to.equal(0);
+
+        expect(normalize(await this.module.getLoans())).to.deep.equal([loan0, loan1])
         expect(normalize(await this.module.getUserLoans(this.borrower1.address))).to.deep.equal([[0, 1], [loan0, loan1]])
         expect(normalize(await this.module.getUserLoans(this.lender1.address))).to.deep.equal([[0, 1], [loan0, loan1]])
     });
@@ -569,7 +689,7 @@ async function ERC20Auction(valuesToReplace = {}) {
             },
             state: STATE_AUCTION_STARTED,
             collateralType: COLLATERAL_TYPE_ERC20,
-            durationDays: 30,
+            durationDays: 365, // for simplicity
             startTS: 0,
             interestRate: 0,
             collateral: context.erc20token1.address,
@@ -626,7 +746,7 @@ async function ERC721Loan(valuesToReplace = {}) {
 function ERC20AuctionStartParams(paramsToReplace) {
     const template = {
         collateralType: COLLATERAL_TYPE_ERC20,
-        durationDays: 30,
+        durationDays: 365,
 
         interestRateMin: 1000,
         interestRateMax: 1000,
