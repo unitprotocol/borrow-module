@@ -184,9 +184,8 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     function liquidate(uint _loanId) external nonReentrant {
         Loan storage loan = requireLoan(_loanId);
 
-        require(loan.startTS + loan.durationDays * 1 days < block.timestamp, 'LOAN_IS_ACTIVE');
-
         changeLoanState(loan, LoanState.Liquidated);
+        require(uint(loan.startTS) + uint(loan.durationDays) * 1 days < block.timestamp, 'LOAN_IS_ACTIVE');
         require(activeLoans.remove(_loanId), 'BROKEN_STRUCTURE');
 
         loan.collateralType.sendAssetTo(loan.collateral, loan.collateralIdOrAmount, loan.lender);
