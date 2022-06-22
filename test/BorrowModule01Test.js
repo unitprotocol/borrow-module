@@ -11,9 +11,6 @@ const ether = x => ethers.utils.parseEther(x.toString());
 
 const UINT_MAX = BN(2).pow(256).sub(1);
 
-const COLLATERAL_TYPE_ERC20 = 0;
-const COLLATERAL_TYPE_ERC721 = 1;
-
 const STATE_WAS_NOT_CREATED = 0;
 const STATE_AUCTION_STARTED = 1;
 const STATE_AUCTION_CANCELLED = 2;
@@ -119,15 +116,6 @@ describe("BorrowModule01", function () {
         await expect(
 			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({debtAmount: UINT_MAX}))
 		).to.be.revertedWith("Arithmetic operation underflowed or overflowed");
-
-        ///////////
-        await expect(
-			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralType: COLLATERAL_TYPE_ERC721}))
-		).to.be.revertedWith("INCORRECT_ASSET_TYPE");
-
-        await expect(
-			this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams({collateralType: COLLATERAL_TYPE_ERC20}))
-		).to.be.revertedWith("INCORRECT_ASSET_TYPE");
     });
 
     it("start auctions and check", async function () {
@@ -810,7 +798,6 @@ async function ERC20Auction(valuesToReplace = {}) {
                 interestRateMax: 1000, // for simplicity, change of interest rate is tested additionally
             },
             state: STATE_AUCTION_STARTED,
-            collateralType: COLLATERAL_TYPE_ERC20,
             durationDays: 365, // for simplicity
             startTS: 0,
             interestRate: 0,
@@ -828,7 +815,6 @@ async function ERC721Auction(valuesToReplace = {}) {
     return lodash.merge(
         await ERC20Auction(),
         {
-            collateralType: COLLATERAL_TYPE_ERC721,
             collateral: context.erc721token1.address,
             collateralIdOrAmount: BN(1),
         },
@@ -856,7 +842,6 @@ async function ERC721Loan(valuesToReplace = {}) {
     return lodash.merge(
         await ERC20Loan(),
         {
-            collateralType: COLLATERAL_TYPE_ERC721,
             collateral: context.erc721token1.address,
             collateralIdOrAmount: BN(1),
         },
@@ -867,7 +852,6 @@ async function ERC721Loan(valuesToReplace = {}) {
 
 function ERC20AuctionStartParams(paramsToReplace) {
     const template = {
-        collateralType: COLLATERAL_TYPE_ERC20,
         durationDays: 365,
 
         interestRateMin: 1000,
@@ -888,7 +872,6 @@ function ERC721AuctionStartParams(paramsToReplace) {
     return {
         ...ERC20AuctionStartParams(),
         ... {
-            collateralType: COLLATERAL_TYPE_ERC721,
             collateral: context.erc721token1.address,
             collateralIdOrAmount: 1,
         },

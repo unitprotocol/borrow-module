@@ -15,7 +15,7 @@ import "./Assets01.sol";
 
 contract BorrowModule01 is Auth, ReentrancyGuard {
     using Parameters01 for IParametersStorage;
-    using Assets01 for Assets01.AssetType;
+    using Assets01 for address;
     using EnumerableSet for EnumerableSet.UintSet;
 
     enum LoanState { WasNotCreated, AuctionStarted, AuctionCancelled, Issued, Finished, Liquidated }
@@ -31,9 +31,8 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         // slot 256 (Nested struct takes up the whole slot. We have to do this since error "Stack too deep..")
         AuctionInfo auctionInfo;
 
-        // slot 240
+        // slot 232
         LoanState state;
-        Assets01.AssetType collateralType;
         uint16 durationDays;
         uint32 startTS;
         uint16 interestRate;
@@ -53,7 +52,6 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     }
 
     struct AuctionStartParams {
-        Assets01.AssetType collateralType;
         uint16 durationDays;
 
         uint16 interestRateMin;
@@ -101,7 +99,6 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
                 ),
 
                 LoanState.AuctionStarted,
-                _params.collateralType,
                 _params.durationDays,
                 0, // startTS
                 0, // interestRate
@@ -120,7 +117,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         loanIdsByUser[msg.sender].push(_loanId);
         require(activeAuctions.add(_loanId), 'BROKEN_STRUCTURE');
 
-        _params.collateralType.getAssetFrom(_params.collateral, _params.collateralIdOrAmount, msg.sender, address(this));
+        _params.collateral.getFrom(msg.sender, address(this), _params.collateralIdOrAmount);
 
         emit AuctionStarted(_loanId, msg.sender);
     }
@@ -132,7 +129,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         changeLoanState(loan, LoanState.AuctionCancelled);
         require(activeAuctions.remove(_loanId), 'BROKEN_STRUCTURE');
 
-        loan.collateralType.sendAssetTo(loan.collateral, loan.collateralIdOrAmount, loan.auctionInfo.borrower);
+        loan.collateral.sendTo(loan.auctionInfo.borrower, loan.collateralIdOrAmount);
 
         emit AuctionCancelled(_loanId, msg.sender);
     }
@@ -157,8 +154,8 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
 
         (uint feeAmount, uint amountWithoutFee) = _calcFeeAmount(loan.debtCurrency, loan.debtAmount);
 
-        Assets01.AssetType.ERC20.getAssetFrom(loan.debtCurrency, feeAmount, msg.sender, parameters.treasury());
-        Assets01.AssetType.ERC20.getAssetFrom(loan.debtCurrency, amountWithoutFee, msg.sender, loan.auctionInfo.borrower);
+        loan.debtCurrency.getFrom(msg.sender, parameters.treasury(), feeAmount);
+        loan.debtCurrency.getFrom(msg.sender, loan.auctionInfo.borrower, amountWithoutFee);
 
         emit LoanIssued(_loanId, msg.sender);
     }
@@ -175,8 +172,8 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         require(activeLoans.remove(_loanId), 'BROKEN_STRUCTURE');
 
         uint totalDebt = _calcTotalDebt(loan.debtAmount, loan.interestRate, loan.durationDays);
-        Assets01.AssetType.ERC20.getAssetFrom(loan.debtCurrency, totalDebt, msg.sender, loan.lender);
-        loan.collateralType.sendAssetTo(loan.collateral, loan.collateralIdOrAmount, loan.auctionInfo.borrower);
+        loan.debtCurrency.getFrom(msg.sender, loan.lender, totalDebt);
+        loan.collateral.sendTo(loan.auctionInfo.borrower, loan.collateralIdOrAmount);
 
         emit LoanRepaid(_loanId, msg.sender);
     }
@@ -188,7 +185,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         require(uint(loan.startTS) + uint(loan.durationDays) * 1 days < block.timestamp, 'LOAN_IS_ACTIVE');
         require(activeLoans.remove(_loanId), 'BROKEN_STRUCTURE');
 
-        loan.collateralType.sendAssetTo(loan.collateral, loan.collateralIdOrAmount, loan.lender);
+        loan.collateral.sendTo(loan.lender, loan.collateralIdOrAmount);
 
         emit LoanLiquidated(_loanId, msg.sender);
     }
