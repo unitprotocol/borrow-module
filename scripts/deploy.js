@@ -15,6 +15,9 @@ async function main() {
     const module = await deployContract("BorrowModule01", parameters.address);
     console.log("BorrowModule01: ", module.address);
 
+    const viewer = await deployContract("AssetViewer");
+    console.log("AssetViewer: ", viewer.address);
+
     await parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, 2 * 3600);
     await parameters.setManager(MANAGER, true);
     await parameters.setManager(deployer.address, false);
@@ -31,6 +34,10 @@ async function main() {
         constructorArguments: [parameters.address],
     });
 
+    await hre.run("verify:verify", {
+        address: viewer.address,
+        constructorArguments: [],
+    });
 }
 
 // We recommend this pattern to be able to use async/await everywhere
