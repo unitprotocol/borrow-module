@@ -1,5 +1,6 @@
 const hre = require("hardhat");
 const {ethers} = require("hardhat");
+const {deployContract} = require("./utils");
 
 const TREASURY = "0x0000000000000000000000000000000000000001";
 const MANAGER = "0x0000000000000000000000000000000000000002";
@@ -8,14 +9,10 @@ const PARAM_AUCTION_DURATION = 0;
 async function main() {
     const [deployer] = await ethers.getSigners();
 
-    const ParametersStorageFactory = await ethers.getContractFactory("ParametersStorage");
-    const parameters = await ParametersStorageFactory.deploy(TREASURY);
-    await parameters.deployed();
+    const parameters = await deployContract("ParametersStorage", TREASURY);
     console.log("ParametersStorage: ", parameters.address);
 
-    const BorrowModule01Factory = await ethers.getContractFactory("BorrowModule01");
-    const module = await BorrowModule01Factory.deploy(parameters.address);
-    await module.deployed();
+    const module = await deployContract("BorrowModule01", parameters.address);
     console.log("BorrowModule01: ", module.address);
 
     await parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, 2 * 3600);

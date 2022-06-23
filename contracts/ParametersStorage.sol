@@ -17,7 +17,7 @@ contract ParametersStorage is IParametersStorage, Auth {
     uint public baseFeeBasisPoints = 100;
     mapping(address => CustomFee) public assetCustomFee;
 
-    /// custom params, parameter => value, see Parameters*.sol
+    /// @dev custom params, parameter => value, see Parameters*.sol. Does not affect assetCustomParams
     mapping(uint => bytes32) public customParams;
     mapping(address => mapping(uint => bytes32)) public assetCustomParams;
 
@@ -89,10 +89,16 @@ contract ParametersStorage is IParametersStorage, Auth {
         emit CustomParamChanged(_param, _value);
     }
 
+    /**
+     * @dev convenient way to set parameters with UI of multisig
+     */
     function setCustomParamAsUint(uint _param, uint _value) public onlyManager {
         setCustomParam(_param, bytes32(_value));
     }
 
+    /**
+     * @dev convenient way to set parameters with UI of multisig
+     */
     function setCustomParamAsAddress(uint _param, address _value) public onlyManager {
         setCustomParam(_param, bytes32(uint(uint160(_value))));
     }
@@ -102,10 +108,16 @@ contract ParametersStorage is IParametersStorage, Auth {
         emit AssetCustomParamChanged(_asset, _param, _value);
     }
 
+    /**
+     * @dev convenient way to set parameters with UI of multisig
+     */
     function setAssetCustomParamAsUint(address _asset, uint _param, uint _value) public onlyManager {
         setAssetCustomParam(_asset, _param, bytes32(_value));
     }
 
+    /**
+     * @dev convenient way to set parameters with UI of multisig
+     */
     function setAssetCustomParamAsAddress(address _asset, uint _param, address _value) public onlyManager {
         setAssetCustomParam(_asset, _param, bytes32(uint(uint160(_value))));
     }

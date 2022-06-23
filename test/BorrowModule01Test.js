@@ -2,6 +2,7 @@ const { expect, assert } = require("chai");
 const { ethers } = require("hardhat");
 
 const lodash = require('lodash');
+const {deployContract} = require("../scripts/utils");
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const ONE = "0x0000000000000000000000000000000000000001";
@@ -23,7 +24,6 @@ const PARAM_AUCTION_DURATION = 0;
 
 let context;
 
-// todo parameters storage tests
 describe("BorrowModule01", function () {
     beforeEach(async function () {
         context = this;
@@ -877,14 +877,6 @@ function ERC721AuctionStartParams(paramsToReplace) {
         },
         ...paramsToReplace
     }
-}
-
-async function deployContract(contract, ...params) {
-    const Factory = await ethers.getContractFactory(contract);
-    const instance = await Factory.deploy(...params);
-    await instance.deployed();
-
-    return instance;
 }
 
 async function getBlockTs(blockNumber = null) {
