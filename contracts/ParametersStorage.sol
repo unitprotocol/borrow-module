@@ -22,15 +22,18 @@ contract ParametersStorage is IParametersStorage, Auth {
     mapping(address => mapping(uint => bytes32)) public assetCustomParams;
 
     modifier correctFee(uint16 fee) {
-        require(fee < 10 * MAX_FEE_BASIS_POINTS, "Unit Protocol: INCORRECT_FEE_VALUE");
+        require(fee <= MAX_FEE_BASIS_POINTS, "UP borrow module: INCORRECT_FEE_VALUE");
         _;
     }
 
     constructor(address _treasury) Auth(address(this)) {
-        require(_treasury != address(0), "Unit Protocol: ZERO_ADDRESS");
+        require(_treasury != address(0), "UP borrow module: ZERO_ADDRESS");
 
         isManager[msg.sender] = true;
+        emit ManagerAdded(msg.sender);
+
         treasury = _treasury;
+        emit TreasuryChanged(_treasury);
     }
 
     function getAssetFee(address _asset) public view returns (uint _feeBasisPoints) {
@@ -63,7 +66,7 @@ contract ParametersStorage is IParametersStorage, Auth {
      * @param _treasury The new treasury address
      **/
     function setTreasury(address _treasury) external onlyManager {
-        require(_treasury != address(0), "ZERO_ADDRESS");
+        require(_treasury != address(0), "UP borrow module: ZERO_ADDRESS");
         treasury = _treasury;
         emit TreasuryChanged(_treasury);
     }

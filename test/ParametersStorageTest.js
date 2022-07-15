@@ -41,9 +41,19 @@ describe("ParametersStorage", function () {
             this.parameters.connect(this.borrower1).setBaseFee(33)
 		).to.be.revertedWith("AUTH_FAILED");
 
+        await this.parameters.setBaseFee(1000);
+        await expect(
+            this.parameters.setBaseFee(1001)
+		).to.be.revertedWith("INCORRECT_FEE_VALUE");
+
         await expect(
             this.parameters.connect(this.borrower1).setAssetCustomFee(ONE, true, 33)
 		).to.be.revertedWith("AUTH_FAILED");
+
+        await this.parameters.setAssetCustomFee(ONE, true, 1000)
+        await expect(
+            this.parameters.setAssetCustomFee(ONE, true, 1001)
+		).to.be.revertedWith("INCORRECT_FEE_VALUE");
 
         await expect(
             this.parameters.connect(this.borrower1).setCustomParam(1, BYTES32_ONE)

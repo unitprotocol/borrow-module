@@ -47,45 +47,45 @@ describe("AssetViewer", function () {
             this.erc721token4.address,
         ];
         expect(await this.viewer.checkAssets(this.deployer.address, assets)).deep.to.equal([
-            [this.borrower1.address, TYPE_UNKNOWN, BN(0)],
-            [this.erc20token1.address, TYPE_ERC20, UINT_MAX],
-            [this.erc20token2.address, TYPE_ERC20, UINT_MAX],
-            [this.erc20token3.address, TYPE_ERC20, UINT_MAX],
-            [this.erc20token4.address, TYPE_ERC20, UINT_MAX],
-            [this.lender1.address, TYPE_UNKNOWN, BN(0)],
-            [this.erc721token1.address, TYPE_ERC721, BN(6)],
-            [this.erc721token2.address, TYPE_ERC721, BN(6)],
-            [this.erc721token3.address, TYPE_ERC721, BN(6)],
-            [this.erc721token4.address, TYPE_ERC721, BN(6)],
+            [this.borrower1.address, TYPE_UNKNOWN, 0, BN(0)],
+            [this.erc20token1.address, TYPE_ERC20, 18, UINT_MAX],
+            [this.erc20token2.address, TYPE_ERC20, 18, UINT_MAX],
+            [this.erc20token3.address, TYPE_ERC20, 18, UINT_MAX],
+            [this.erc20token4.address, TYPE_ERC20, 18, UINT_MAX],
+            [this.lender1.address, TYPE_UNKNOWN, 0, BN(0)],
+            [this.erc721token1.address, TYPE_ERC721, 0, BN(7)],
+            [this.erc721token2.address, TYPE_ERC721, 0, BN(7)],
+            [this.erc721token3.address, TYPE_ERC721, 0, BN(7)],
+            [this.erc721token4.address, TYPE_ERC721, 0, BN(7)],
         ]);
 
         expect(await this.viewer.checkAssets(this.borrower1.address, assets)).deep.to.equal([
-            [this.borrower1.address, TYPE_UNKNOWN, BN(0)],
-            [this.erc20token1.address, TYPE_ERC20, BN(0)],
-            [this.erc20token2.address, TYPE_ERC20, BN(0)],
-            [this.erc20token3.address, TYPE_ERC20, BN(0)],
-            [this.erc20token4.address, TYPE_ERC20, BN(0)],
-            [this.lender1.address, TYPE_UNKNOWN, BN(0)],
-            [this.erc721token1.address, TYPE_ERC721, BN(0)],
-            [this.erc721token2.address, TYPE_ERC721, BN(0)],
-            [this.erc721token3.address, TYPE_ERC721, BN(0)],
-            [this.erc721token4.address, TYPE_ERC721, BN(0)],
+            [this.borrower1.address, TYPE_UNKNOWN, 0, BN(0)],
+            [this.erc20token1.address, TYPE_ERC20, 18, BN(0)],
+            [this.erc20token2.address, TYPE_ERC20, 18, BN(0)],
+            [this.erc20token3.address, TYPE_ERC20, 18, BN(0)],
+            [this.erc20token4.address, TYPE_ERC20, 18, BN(0)],
+            [this.lender1.address, TYPE_UNKNOWN, 0, BN(0)],
+            [this.erc721token1.address, TYPE_ERC721, 0, BN(0)],
+            [this.erc721token2.address, TYPE_ERC721, 0, BN(0)],
+            [this.erc721token3.address, TYPE_ERC721, 0, BN(0)],
+            [this.erc721token4.address, TYPE_ERC721, 0, BN(0)],
         ]);
 
         await this.erc20token3.transfer(this.borrower1.address, ether(3));
         await this.erc721token3['safeTransferFrom(address,address,uint256)'](this.deployer.address, this.borrower1.address, 3);
 
         expect(await this.viewer.checkAssets(this.borrower1.address, assets)).deep.to.equal([
-            [this.borrower1.address, TYPE_UNKNOWN, BN(0)],
-            [this.erc20token1.address, TYPE_ERC20, BN(0)],
-            [this.erc20token2.address, TYPE_ERC20, BN(0)],
-            [this.erc20token3.address, TYPE_ERC20, ether(3)],
-            [this.erc20token4.address, TYPE_ERC20, BN(0)],
-            [this.lender1.address, TYPE_UNKNOWN, BN(0)],
-            [this.erc721token1.address, TYPE_ERC721, BN(0)],
-            [this.erc721token2.address, TYPE_ERC721, BN(0)],
-            [this.erc721token3.address, TYPE_ERC721, BN(1)],
-            [this.erc721token4.address, TYPE_ERC721, BN(0)],
+            [this.borrower1.address, TYPE_UNKNOWN, 0, BN(0)],
+            [this.erc20token1.address, TYPE_ERC20, 18, BN(0)],
+            [this.erc20token2.address, TYPE_ERC20, 18, BN(0)],
+            [this.erc20token3.address, TYPE_ERC20, 18, ether(3)],
+            [this.erc20token4.address, TYPE_ERC20, 18, BN(0)],
+            [this.lender1.address, TYPE_UNKNOWN, 0, BN(0)],
+            [this.erc721token1.address, TYPE_ERC721, 0, BN(0)],
+            [this.erc721token2.address, TYPE_ERC721, 0, BN(0)],
+            [this.erc721token3.address, TYPE_ERC721, 0, BN(1)],
+            [this.erc721token4.address, TYPE_ERC721, 0, BN(0)],
         ]);
 
     })

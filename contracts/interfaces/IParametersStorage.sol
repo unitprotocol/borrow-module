@@ -13,10 +13,10 @@ interface IParametersStorage {
     event ManagerRemoved(address manager);
     event TreasuryChanged(address newTreasury);
     event BaseFeeChanged(uint16 newFeeBasisPoints);
-    event AssetCustomFeeEnabled(address _asset, uint16 _feeBasisPoints);
-    event AssetCustomFeeDisabled(address _asset);
-    event CustomParamChanged(uint param, bytes32 value);
-    event AssetCustomParamChanged(address asset, uint param, bytes32 value);
+    event AssetCustomFeeEnabled(address indexed _asset, uint16 _feeBasisPoints);
+    event AssetCustomFeeDisabled(address indexed _asset);
+    event CustomParamChanged(uint indexed param, bytes32 value);
+    event AssetCustomParamChanged(address indexed asset, uint indexed param, bytes32 value);
 
     function isManager(address) external view returns (bool);
 

@@ -19,6 +19,9 @@ const STATE_ISSUED = 3;
 const STATE_FINISHED = 4;
 const STATE_LIQUIDATED = 5;
 
+const ASSET_TYPE_UNKNOWN = 0;
+const ASSET_TYPE_ERC20 = 1;
+const ASSET_TYPE_ERC721 = 2;
 
 const PARAM_AUCTION_DURATION = 0;
 
@@ -71,6 +74,20 @@ describe("BorrowModule01", function () {
         ///////////
 
         await expect(
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralType: ASSET_TYPE_UNKNOWN}))
+		).to.be.revertedWith("UNSUPPORTED_ASSET_TYPE");
+
+        await expect(
+			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralType: ASSET_TYPE_ERC721}))
+		).to.be.revertedWith("WRONG_ASSET_TYPE");
+
+        await expect(
+			this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams({collateralType: ASSET_TYPE_ERC20}))
+		).to.be.revertedWith("WRONG_ASSET_TYPE");
+
+        ///////////
+
+        await expect(
 			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({interestRateMin: 0}))
 		).to.be.revertedWith("INVALID_INTEREST_RATE");
 
@@ -93,7 +110,11 @@ describe("BorrowModule01", function () {
 
         await expect(
 			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralIdOrAmount: 0}))
-		).to.be.revertedWith("INVALID_COLLATERAL");
+		).to.be.revertedWith("INVALID_COLLATERAL_AMOUNT");
+
+        await this.erc721token1.safeTransferFrom(this.deployer.address, this.borrower1.address, 0);
+        await this.erc721token1.connect(this.borrower1).approve(this.module.address, 0);
+        await this.module.connect(this.borrower1).startAuction(ERC721AuctionStartParams({collateralIdOrAmount: 0}));
 
         await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralIdOrAmount: 1}));
 
@@ -802,6 +823,7 @@ async function ERC20Auction(valuesToReplace = {}) {
             startTS: 0,
             interestRate: 0,
             collateral: context.erc20token1.address,
+            collateralType: ASSET_TYPE_ERC20,
             collateralIdOrAmount: ether(1),
             lender: ZERO,
             debtCurrency: context.erc20token2.address,
@@ -816,6 +838,7 @@ async function ERC721Auction(valuesToReplace = {}) {
         await ERC20Auction(),
         {
             collateral: context.erc721token1.address,
+            collateralType: ASSET_TYPE_ERC721,
             collateralIdOrAmount: BN(1),
         },
         valuesToReplace
@@ -843,6 +866,7 @@ async function ERC721Loan(valuesToReplace = {}) {
         await ERC20Loan(),
         {
             collateral: context.erc721token1.address,
+            collateralType: ASSET_TYPE_ERC721,
             collateralIdOrAmount: BN(1),
         },
         valuesToReplace
@@ -858,6 +882,7 @@ function ERC20AuctionStartParams(paramsToReplace) {
         interestRateMax: 1000,
 
         collateral: context.erc20token1.address,
+        collateralType: ASSET_TYPE_ERC20,
         collateralIdOrAmount: ether(1),
 
         debtCurrency: context.erc20token2.address,
@@ -873,6 +898,7 @@ function ERC721AuctionStartParams(paramsToReplace) {
         ...ERC20AuctionStartParams(),
         ... {
             collateral: context.erc721token1.address,
+            collateralType: ASSET_TYPE_ERC721,
             collateralIdOrAmount: 1,
         },
         ...paramsToReplace

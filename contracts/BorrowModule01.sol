@@ -31,12 +31,13 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         // slot 256 (Nested struct takes up the whole slot. We have to do this since error "Stack too deep..")
         AuctionInfo auctionInfo;
 
-        // slot 232
+        // slot 240
         LoanState state;
         uint16 durationDays;
         uint32 startTS;
         uint16 interestRate;
         address collateral;
+        Assets01.AssetType collateralType;
 
         // slot 256
         uint collateralIdOrAmount;
@@ -58,18 +59,19 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         uint16 interestRateMax;
 
         address collateral;
+        Assets01.AssetType collateralType;
         uint collateralIdOrAmount;
 
         address debtCurrency;
         uint debtAmount;
     }
 
-    event AuctionStarted(uint loanId, address borrower);
-    event AuctionCancelled(uint loanId, address borrower);
+    event AuctionStarted(uint indexed loanId, address indexed borrower);
+    event AuctionCancelled(uint indexed loanId, address indexed borrower);
 
-    event LoanIssued(uint loanId, address lender);
-    event LoanRepaid(uint loanId, address borrower);
-    event LoanLiquidated(uint loanId, address liquidator);
+    event LoanIssued(uint indexed loanId, address indexed lender);
+    event LoanRepaid(uint indexed loanId, address indexed borrower);
+    event LoanLiquidated(uint indexed loanId, address indexed liquidator);
 
     uint public constant BASIS_POINTS_IN_1 = 1e4;
     uint public constant MAX_DURATION_DAYS = 365 * 2;
@@ -82,10 +84,11 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     constructor(address _parametersStorage) Auth(_parametersStorage) {}
 
     function startAuction(AuctionStartParams memory _params) external nonReentrant returns (uint _loanId) {
-        require(0 < _params.durationDays &&_params.durationDays <= MAX_DURATION_DAYS, 'INVALID_LOAN_DURATION');
-        require(0 < _params.interestRateMin && _params.interestRateMin <= _params.interestRateMax, 'INVALID_INTEREST_RATE');
-        require(_params.collateral != address(0) && _params.collateralIdOrAmount > 0, 'INVALID_COLLATERAL');
-        require(_params.debtCurrency != address(0) && _params.debtAmount > 0, 'INVALID_DEBT_CURRENCY');
+        require(0 < _params.durationDays &&_params.durationDays <= MAX_DURATION_DAYS, 'UP borrow module: INVALID_LOAN_DURATION');
+        require(0 < _params.interestRateMin && _params.interestRateMin <= _params.interestRateMax, 'UP borrow module: INVALID_INTEREST_RATE');
+        require(_params.collateral != address(0), 'UP borrow module: INVALID_COLLATERAL');
+        require(_params.collateralType == Assets01.AssetType.ERC721 || _params.collateralIdOrAmount > 0, 'UP borrow module: INVALID_COLLATERAL_AMOUNT');
+        require(_params.debtCurrency != address(0) && _params.debtAmount > 0, 'UP borrow module: INVALID_DEBT_CURRENCY');
         _calcTotalDebt(_params.debtAmount, _params.interestRateMax, _params.durationDays); // just check that there is no overflow on total debt
 
         _loanId = loans.length;
@@ -103,6 +106,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
                 0, // startTS
                 0, // interestRate
                 _params.collateral,
+                _params.collateralType,
 
                 _params.collateralIdOrAmount,
 
@@ -115,21 +119,21 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         );
 
         loanIdsByUser[msg.sender].push(_loanId);
-        require(activeAuctions.add(_loanId), 'BROKEN_STRUCTURE');
+        require(activeAuctions.add(_loanId), 'UP borrow module: BROKEN_STRUCTURE');
 
-        _params.collateral.getFrom(msg.sender, address(this), _params.collateralIdOrAmount);
+        _params.collateral.getFrom(_params.collateralType, msg.sender, address(this), _params.collateralIdOrAmount);
 
         emit AuctionStarted(_loanId, msg.sender);
     }
 
     function cancelAuction(uint _loanId) external nonReentrant {
         Loan storage loan = requireLoan(_loanId);
-        require(loan.auctionInfo.borrower == msg.sender, 'AUTH_FAILED');
+        require(loan.auctionInfo.borrower == msg.sender, 'UP borrow module: AUTH_FAILED');
 
         changeLoanState(loan, LoanState.AuctionCancelled);
-        require(activeAuctions.remove(_loanId), 'BROKEN_STRUCTURE');
+        require(activeAuctions.remove(_loanId), 'UP borrow module: BROKEN_STRUCTURE');
 
-        loan.collateral.sendTo(loan.auctionInfo.borrower, loan.collateralIdOrAmount);
+        loan.collateral.sendTo(loan.collateralType, loan.auctionInfo.borrower, loan.collateralIdOrAmount);
 
         emit AuctionCancelled(_loanId, msg.sender);
     }
@@ -140,22 +144,22 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     function accept(uint _loanId) external nonReentrant {
         Loan storage loan = requireLoan(_loanId);
 
-        require(loan.auctionInfo.borrower != msg.sender, 'OWN_AUCTION');
+        require(loan.auctionInfo.borrower != msg.sender, 'UP borrow module: OWN_AUCTION');
 
         changeLoanState(loan, LoanState.Issued);
-        require(activeAuctions.remove(_loanId), 'BROKEN_STRUCTURE');
-        require(activeLoans.add(_loanId), 'BROKEN_STRUCTURE');
+        require(activeAuctions.remove(_loanId), 'UP borrow module: BROKEN_STRUCTURE');
+        require(activeLoans.add(_loanId), 'UP borrow module: BROKEN_STRUCTURE');
 
         loan.startTS = uint32(block.timestamp);
         loan.lender = msg.sender;
-        loan.interestRate = _calcCurrentInterestRate(loan.auctionInfo.startTS, loan.auctionInfo.interestRateMin, loan.auctionInfo.interestRateMax);
+        loan.interestRate =  _calcCurrentInterestRate(loan.auctionInfo.startTS, loan.auctionInfo.interestRateMin, loan.auctionInfo.interestRateMax);
 
         loanIdsByUser[msg.sender].push(_loanId);
 
         (uint feeAmount, uint amountWithoutFee) = _calcFeeAmount(loan.debtCurrency, loan.debtAmount);
 
-        loan.debtCurrency.getFrom(msg.sender, parameters.treasury(), feeAmount);
-        loan.debtCurrency.getFrom(msg.sender, loan.auctionInfo.borrower, amountWithoutFee);
+        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, parameters.treasury(), feeAmount);
+        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, loan.auctionInfo.borrower, amountWithoutFee);
 
         emit LoanIssued(_loanId, msg.sender);
     }
@@ -166,14 +170,14 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
      */
     function repay(uint _loanId) external nonReentrant {
         Loan storage loan = requireLoan(_loanId);
-        require(loan.auctionInfo.borrower == msg.sender, 'AUTH_FAILED');
+        require(loan.auctionInfo.borrower == msg.sender, 'UP borrow module: AUTH_FAILED');
 
         changeLoanState(loan, LoanState.Finished);
-        require(activeLoans.remove(_loanId), 'BROKEN_STRUCTURE');
+        require(activeLoans.remove(_loanId), 'UP borrow module: BROKEN_STRUCTURE');
 
         uint totalDebt = _calcTotalDebt(loan.debtAmount, loan.interestRate, loan.durationDays);
-        loan.debtCurrency.getFrom(msg.sender, loan.lender, totalDebt);
-        loan.collateral.sendTo(loan.auctionInfo.borrower, loan.collateralIdOrAmount);
+        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, loan.lender, totalDebt);
+        loan.collateral.sendTo(loan.collateralType, loan.auctionInfo.borrower, loan.collateralIdOrAmount);
 
         emit LoanRepaid(_loanId, msg.sender);
     }
@@ -182,29 +186,29 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         Loan storage loan = requireLoan(_loanId);
 
         changeLoanState(loan, LoanState.Liquidated);
-        require(uint(loan.startTS) + uint(loan.durationDays) * 1 days < block.timestamp, 'LOAN_IS_ACTIVE');
-        require(activeLoans.remove(_loanId), 'BROKEN_STRUCTURE');
+        require(uint(loan.startTS) + uint(loan.durationDays) * 1 days < block.timestamp, 'UP borrow module: LOAN_IS_ACTIVE');
+        require(activeLoans.remove(_loanId), 'UP borrow module: BROKEN_STRUCTURE');
 
-        loan.collateral.sendTo(loan.lender, loan.collateralIdOrAmount);
+        loan.collateral.sendTo(loan.collateralType, loan.lender, loan.collateralIdOrAmount);
 
         emit LoanLiquidated(_loanId, msg.sender);
     }
 
-    function requireLoan(uint _loadId) internal view returns (Loan storage _loan) {
-        require(_loadId < loans.length, 'INVALID_LOAN_ID');
-        _loan = loans[_loadId];
+    function requireLoan(uint _loanId) internal view returns (Loan storage _loan) {
+        require(_loanId < loans.length, 'UP borrow module: INVALID_LOAN_ID');
+        _loan = loans[_loanId];
     }
 
     function changeLoanState(Loan storage _loan, LoanState _newState) internal {
         LoanState currentState = _loan.state;
         if (currentState == LoanState.AuctionStarted) {
-            require(_newState == LoanState.AuctionCancelled || _newState == LoanState.Issued, 'INVALID_LOAN_STATE');
+            require(_newState == LoanState.AuctionCancelled || _newState == LoanState.Issued, 'UP borrow module: INVALID_LOAN_STATE');
         } else if (currentState == LoanState.Issued) {
-            require(_newState == LoanState.Finished || _newState == LoanState.Liquidated, 'INVALID_LOAN_STATE');
+            require(_newState == LoanState.Finished || _newState == LoanState.Liquidated, 'UP borrow module: INVALID_LOAN_STATE');
         } else if (currentState == LoanState.AuctionCancelled || currentState == LoanState.Finished || currentState == LoanState.Liquidated) {
-            revert('INVALID_LOAN_STATE');
+            revert('UP borrow module: INVALID_LOAN_STATE');
         } else {
-            revert('BROKEN_LOGIC'); // just to be sure that all states are covered
+            revert('UP borrow module: BROKEN_LOGIC'); // just to be sure that all states are covered
         }
 
         _loan.state = _newState;
@@ -324,12 +328,12 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     }
 
     function _calcTotalDebt(uint debtAmount, uint interestRateBasisPoints, uint durationDays) internal pure returns (uint) {
-        return debtAmount + debtAmount * interestRateBasisPoints * durationDays * 1 days / BASIS_POINTS_IN_1 / 365 days;
+        return debtAmount + debtAmount * interestRateBasisPoints * durationDays / BASIS_POINTS_IN_1 / 365;
     }
 
     function _calcCurrentInterestRate(uint auctionStartTS, uint16 interestRateMin, uint16 interestRateMax) internal view returns (uint16) {
-        require(auctionStartTS < block.timestamp, 'TOO_EARLY');
-        require(0 < interestRateMin && interestRateMin <= interestRateMax, 'INVALID_INTEREST_RATES'); // assert
+        require(auctionStartTS < block.timestamp, 'UP borrow module: TOO_EARLY');
+        require(0 < interestRateMin && interestRateMin <= interestRateMax, 'UP borrow module: INVALID_INTEREST_RATES'); // assert
 
         uint auctionEndTs = auctionStartTS + parameters.getAuctionDuration();
         uint onTime = Math.min(block.timestamp, auctionEndTs);
@@ -370,7 +374,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         uint256 /* tokenId */,
         bytes calldata /* data */
     ) external view returns (bytes4) {
-        require(operator == address(this), "TRANSFER_NOT_ALLOWED");
+        require(operator == address(this), "UP borrow module: TRANSFER_NOT_ALLOWED");
 
         return IERC721Receiver.onERC721Received.selector;
     }
