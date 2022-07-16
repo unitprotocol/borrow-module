@@ -32,7 +32,7 @@ let context;
 describe("BorrowModule01", function () {
     beforeEach(async function () {
         context = this;
-        [this.deployer, this.borrower1, this.borrower2, this.lender1, this.lender2, this.treasury] = await ethers.getSigners();
+        [this.deployer, this.borrower1, this.borrower2, this.lender1, this.lender2, this.treasury, this.operatorTreasury] = await ethers.getSigners();
 
         this.erc20token1 = await deployContract("ERC20Token", UINT_MAX);
         this.erc20token2 = await deployContract("ERC20Token", UINT_MAX);
@@ -44,7 +44,7 @@ describe("BorrowModule01", function () {
         this.erc721token3 = updateERC721(await deployContract("ERC721Token"));
         this.erc721token4 = updateERC721(await deployContract("ERC721Token"));
 
-        this.parameters = await deployContract("ParametersStorage", this.treasury.address);
+        this.parameters = await deployContract("ParametersStorage", this.treasury.address, this.operatorTreasury.address);
         await this.parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, AUCTION_DURATION);
 
         this.module = await deployContract("BorrowModule01Mock", this.parameters.address); // in mock some internal methods are made public
@@ -552,6 +552,7 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(50))
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(0)
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50))
         expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
 
@@ -567,7 +568,8 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(49))
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(49.5))
-        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.005))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.0025))
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(ether(0.0025))
         expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether(0.495))
 
         expect(await this.module.getActiveAuctionsCount()).to.equal(0);
@@ -586,7 +588,8 @@ describe("BorrowModule01", function () {
         expect(await this.erc721token1.ownerOf(1)).to.equal(this.module.address)
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(49))
-        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.01))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.005))
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(ether(0.005))
         expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether(0.99))
 
         expect(await this.module.getActiveAuctionsCount()).to.equal(0);
@@ -672,6 +675,7 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether(50))
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(0)
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50))
         expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
 
@@ -689,7 +693,8 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether('49.945')) // sub interest (0.05) and fee (0.005)
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50.05))
-        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.005))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.0025))
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(ether(0.0025))
 
         expect(await this.module.getActiveAuctionsCount()).to.equal(0);
         expect(await this.module.getActiveLoansCount()).to.equal(0);
@@ -708,7 +713,8 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether('49.89')) // sub interest (0.05) and fee (0.005)
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50.1))
-        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.01))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.005))
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(ether(0.005))
 
         expect(await this.module.getActiveAuctionsCount()).to.equal(0);
         expect(await this.module.getActiveLoansCount()).to.equal(0);
@@ -789,6 +795,7 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token1.balanceOf(this.borrower1.address)).to.equal(ether(50))
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(0)
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(50))
         expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
 
@@ -809,7 +816,8 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether('0.495')) // sub fee (0.005)
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(49.5))
-        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.005))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.0025))
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(ether(0.0025))
 
         expect(await this.module.getActiveAuctionsCount()).to.equal(0);
         expect(await this.module.getActiveLoansCount()).to.equal(0);
@@ -830,7 +838,8 @@ describe("BorrowModule01", function () {
         expect(await this.erc20token2.balanceOf(this.borrower1.address)).to.equal(ether('0.99')) // sub fee (0.005) *2
         expect(await this.erc20token2.balanceOf(this.module.address)).to.equal(0)
         expect(await this.erc20token2.balanceOf(this.lender1.address)).to.equal(ether(49))
-        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.01))
+        expect(await this.erc20token2.balanceOf(this.treasury.address)).to.equal(ether(0.005))
+        expect(await this.erc20token2.balanceOf(this.operatorTreasury.address)).to.equal(ether(0.005))
 
         expect(await this.module.getActiveAuctionsCount()).to.equal(0);
         expect(await this.module.getActiveLoansCount()).to.equal(0);
@@ -887,12 +896,27 @@ describe("BorrowModule01", function () {
             await this.parameters.setAssetCustomFee(this.erc20token2.address, true, 100);
 
             const cases =  [
-                [ this.erc20token1.address, 1_000_000, [BN(0), BN(1_000_000)],  'no fee'],
-                [ this.erc20token2.address, 1_000_000, [BN(10_000), BN(990_000)],  'fee'],
-                [ this.erc20token2.address, 10, [BN(0), BN(10)],  'fee too small'],
+                [ this.erc20token1.address, 1_000_000, [BN(0), BN(0), BN(1_000_000)],  'no fee'],
+                [ this.erc20token2.address, 1_000_000, [BN(5_000), BN(5_000), BN(990_000)],  'fee'],
+                [ this.erc20token2.address, 10, [BN(0), BN(0), BN(10)],  'fee too small'],
             ];
 
             for (const [asset, amount, result, case_] of cases) {
+                expect(await this.module._calcFeeAmount_tests(asset, amount)).to.deep.equal(result, case_);
+            }
+
+            await this.parameters.setOperatorFee(1);
+
+            const cases2 =  [
+                [ this.erc20token1.address, 1_000_000, [BN(0), BN(0), BN(1_000_000)],  'no fee'],
+                [ this.erc20token2.address, 1_000_000, [BN(9_900), BN(100), BN(990_000)],  'fee'],
+                [ this.erc20token2.address, 100, [BN(1), BN(0), BN(99)],  'operator fee too small'],
+                [ this.erc20token2.address, 150, [BN(1), BN(0), BN(149)],  'operator fee too small 2'],
+                [ this.erc20token2.address, 200, [BN(2), BN(0), BN(198)],  'operator fee too small 3'],
+                [ this.erc20token2.address, 10, [BN(0), BN(0), BN(10)],  'fee too small'],
+            ];
+
+            for (const [asset, amount, result, case_] of cases2) {
                 expect(await this.module._calcFeeAmount_tests(asset, amount)).to.deep.equal(result, case_);
             }
         });

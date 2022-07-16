@@ -15,14 +15,15 @@ let context;
 describe("ParametersStorage", function () {
     beforeEach(async function () {
         context = this;
-        [this.deployer, this.borrower1, this.borrower2, this.lender1, this.lender2, this.treasury] = await ethers.getSigners();
+        [this.deployer, this.borrower1, this.borrower2, this.lender1, this.lender2, this.treasury, this.operatorTreasury] = await ethers.getSigners();
 
-        this.parameters = await deployContract("ParametersStorage", this.treasury.address);
+        this.parameters = await deployContract("ParametersStorage", this.treasury.address, this.operatorTreasury.address);
 
     });
 
     it("deploy", async function () {
         expect(await this.parameters.treasury()).to.equal(this.treasury.address);
+        expect(await this.parameters.operatorTreasury()).to.equal(this.operatorTreasury.address);
         expect(await this.parameters.isManager(this.deployer.address)).to.be.true;
         expect(await this.parameters.isManager(this.borrower1.address)).to.be.false;
     });
@@ -36,6 +37,12 @@ describe("ParametersStorage", function () {
         await expect(
             this.parameters.connect(this.borrower1).setTreasury(ONE)
 		).to.be.revertedWith("AUTH_FAILED");
+
+        await expect(
+            this.parameters.connect(this.borrower1).setOperatorTreasury(ONE)
+		).to.be.revertedWith("AUTH_FAILED");
+
+        ///////////
 
         await expect(
             this.parameters.connect(this.borrower1).setBaseFee(33)
@@ -54,6 +61,12 @@ describe("ParametersStorage", function () {
         await expect(
             this.parameters.setAssetCustomFee(ONE, true, 1001)
 		).to.be.revertedWith("INCORRECT_FEE_VALUE");
+
+        await expect(
+            this.parameters.connect(this.borrower1).setOperatorFee(50)
+		).to.be.revertedWith("AUTH_FAILED");
+
+        ////////////
 
         await expect(
             this.parameters.connect(this.borrower1).setCustomParam(1, BYTES32_ONE)
@@ -119,6 +132,18 @@ describe("ParametersStorage", function () {
 		).to.be.revertedWith("ZERO_ADDRESS");
     });
 
+    it("setOperatorTreasury", async function () {
+        await this.parameters.connect(this.deployer).setOperatorTreasury(ONE)
+        expect(await this.parameters.operatorTreasury()).to.equal(ONE);
+
+        await this.parameters.connect(this.deployer).setOperatorTreasury(TWO)
+        expect(await this.parameters.operatorTreasury()).to.equal(TWO);
+
+        await expect(
+            this.parameters.connect(this.deployer).setOperatorTreasury(ZERO)
+		).to.be.revertedWith("ZERO_ADDRESS");
+    });
+
     it("fees", async function () {
         expect(await this.parameters.baseFeeBasisPoints()).to.equal(100);
         expect(await this.parameters.assetCustomFee(ONE)).deep.to.equal([false, 0]);
@@ -149,6 +174,22 @@ describe("ParametersStorage", function () {
         expect(await this.parameters.assetCustomFee(TWO)).deep.to.equal([false, 0]);
         expect(await this.parameters.getAssetFee(ONE)).to.equal(300);
         expect(await this.parameters.getAssetFee(TWO)).to.equal(300);
+    });
+
+    it("operator fee", async function () {
+        expect(await this.parameters.operatorFeePercent()).to.equal(50);
+
+        await expect(
+            this.parameters.setOperatorFee(51)
+		).to.be.revertedWith("INCORRECT_FEE_VALUE");
+
+        expect(await this.parameters.operatorFeePercent()).to.equal(50);
+
+        await this.parameters.setOperatorFee(0)
+        expect(await this.parameters.operatorFeePercent()).to.equal(0);
+
+        await this.parameters.setOperatorFee(50)
+        expect(await this.parameters.operatorFeePercent()).to.equal(50);
     });
 
     it("custom params", async function () {

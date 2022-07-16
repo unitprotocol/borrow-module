@@ -12,18 +12,22 @@ interface IParametersStorage {
     event ManagerAdded(address manager);
     event ManagerRemoved(address manager);
     event TreasuryChanged(address newTreasury);
-    event BaseFeeChanged(uint16 newFeeBasisPoints);
+    event OperatorTreasuryChanged(address newOperatorTreasury);
+    event BaseFeeChanged(uint newFeeBasisPoints);
     event AssetCustomFeeEnabled(address indexed _asset, uint16 _feeBasisPoints);
     event AssetCustomFeeDisabled(address indexed _asset);
+    event OperatorFeeChanged(uint newOperatorFeePercent);
     event CustomParamChanged(uint indexed param, bytes32 value);
     event AssetCustomParamChanged(address indexed asset, uint indexed param, bytes32 value);
 
     function isManager(address) external view returns (bool);
 
     function treasury() external view returns (address);
+    function operatorTreasury() external view returns (address);
 
     function baseFeeBasisPoints() external view returns (uint);
     function assetCustomFee(address) external view returns (bool _enabled, uint16 _feeBasisPoints);
+    function operatorFeePercent() external view returns (uint);
 
     function getAssetFee(address _asset) external view returns (uint _feeBasisPoints);
 
@@ -32,9 +36,11 @@ interface IParametersStorage {
 
     function setManager(address _who, bool _permit) external;
     function setTreasury(address _treasury) external;
+    function setOperatorTreasury(address _operatorTreasury) external;
 
-    function setBaseFee(uint16 _feeBasisPoints) external;
+    function setBaseFee(uint _feeBasisPoints) external;
     function setAssetCustomFee(address _asset, bool _enabled, uint16 _feeBasisPoints) external;
+    function setOperatorFee(uint _feeBasisPoints) external;
 
     function setCustomParam(uint _param, bytes32 _value) external;
     function setCustomParamAsUint(uint _param, uint _value) external;

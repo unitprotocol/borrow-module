@@ -169,10 +169,16 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
 
         loanIdsByUser[msg.sender].push(_loanId);
 
-        (uint feeAmount, uint amountWithoutFee) = _calcFeeAmount(loan.debtCurrency, loan.debtAmount);
+        (uint feeAmount, uint operatorFeeAmount, uint amountWithoutFee) = _calcFeeAmount(loan.debtCurrency, loan.debtAmount);
 
-        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, parameters.treasury(), feeAmount);
-        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, loan.auctionInfo.borrower, amountWithoutFee);
+        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, address(this), loan.debtAmount);
+        if (feeAmount > 0) {
+            loan.debtCurrency.sendTo(Assets01.AssetType.ERC20, parameters.treasury(), feeAmount);
+        }
+        if (operatorFeeAmount > 0) {
+            loan.debtCurrency.sendTo(Assets01.AssetType.ERC20, parameters.operatorTreasury(), operatorFeeAmount);
+        }
+        loan.debtCurrency.sendTo(Assets01.AssetType.ERC20, loan.auctionInfo.borrower, amountWithoutFee);
 
         emit LoanIssued(_loanId, msg.sender);
     }
@@ -334,10 +340,16 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
 
     //////
 
-    function _calcFeeAmount(address _asset, uint _amount) internal view returns (uint _feeAmount, uint _amountWithoutFee) {
+    function _calcFeeAmount(address _asset, uint _amount) internal view returns (uint _feeAmount, uint _operatorFeeAmount, uint _amountWithoutFee) {
         uint feeBasisPoints = parameters.getAssetFee(_asset);
-        _feeAmount = _amount * feeBasisPoints / BASIS_POINTS_IN_1;
-        _amountWithoutFee = _amount - _feeAmount;
+        uint _totalFeeAmount = _amount * feeBasisPoints / BASIS_POINTS_IN_1;
+
+        _operatorFeeAmount = _totalFeeAmount * parameters.operatorFeePercent() / 100;
+        _feeAmount = _totalFeeAmount - _operatorFeeAmount;
+
+        _amountWithoutFee = _amount - _totalFeeAmount;
+
+        require(_amount == _feeAmount + _operatorFeeAmount + _amountWithoutFee, 'UP borrow module: BROKEN_FEE_LOGIC'); // assert
     }
 
     function _calcTotalDebt(uint debtAmount, uint interestRateBasisPoints, uint durationDays) internal pure returns (uint) {

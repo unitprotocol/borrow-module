@@ -10,30 +10,37 @@ contract ParametersStorage is IParametersStorage, Auth {
 
     uint public constant BASIS_POINTS_IN_1_PERCENT = 100;
     uint public constant MAX_FEE_BASIS_POINTS = 10 * BASIS_POINTS_IN_1_PERCENT;
+    uint public constant MAX_OPERATOR_FEE_PERCENT = 50;
 
     mapping(address => bool) public isManager;
 
     address public treasury;
+    address public operatorTreasury;
     uint public baseFeeBasisPoints = 100;
     mapping(address => CustomFee) public assetCustomFee;
+    /// @notice % of total fee to send to operator treasury
+    uint public operatorFeePercent = 50;
 
     /// @dev custom params, parameter => value, see Parameters*.sol. Does not affect assetCustomParams
     mapping(uint => bytes32) public customParams;
     mapping(address => mapping(uint => bytes32)) public assetCustomParams;
 
-    modifier correctFee(uint16 fee) {
+    modifier correctFee(uint fee) {
         require(fee <= MAX_FEE_BASIS_POINTS, "UP borrow module: INCORRECT_FEE_VALUE");
         _;
     }
 
-    constructor(address _treasury) Auth(address(this)) {
-        require(_treasury != address(0), "UP borrow module: ZERO_ADDRESS");
+    constructor(address _treasury, address _operatorTreasury) Auth(address(this)) {
+        require(_treasury != address(0) && _operatorTreasury != address(0), "UP borrow module: ZERO_ADDRESS");
 
         isManager[msg.sender] = true;
         emit ManagerAdded(msg.sender);
 
         treasury = _treasury;
         emit TreasuryChanged(_treasury);
+
+        operatorTreasury = _operatorTreasury;
+        emit OperatorTreasuryChanged(operatorTreasury);
     }
 
     function getAssetFee(address _asset) public view returns (uint _feeBasisPoints) {
@@ -71,7 +78,19 @@ contract ParametersStorage is IParametersStorage, Auth {
         emit TreasuryChanged(_treasury);
     }
 
-    function setBaseFee(uint16 _feeBasisPoints) external onlyManager correctFee(_feeBasisPoints) {
+    /**
+     * @notice Only manager is able to call this function
+     * @dev Sets the operator treasury address
+     * @param _operatorTreasury The new operator treasury address
+     **/
+    function setOperatorTreasury(address _operatorTreasury) external onlyManager {
+        require(_operatorTreasury != address(0), "UP borrow module: ZERO_ADDRESS");
+
+        operatorTreasury = _operatorTreasury;
+        emit OperatorTreasuryChanged(operatorTreasury);
+    }
+
+    function setBaseFee(uint _feeBasisPoints) external onlyManager correctFee(_feeBasisPoints) {
         baseFeeBasisPoints = _feeBasisPoints;
         emit BaseFeeChanged(_feeBasisPoints);
     }
@@ -85,6 +104,13 @@ contract ParametersStorage is IParametersStorage, Auth {
         } else {
             emit AssetCustomFeeDisabled(_asset);
         }
+    }
+
+    function setOperatorFee(uint _operatorFeePercent) external onlyManager {
+        require(_operatorFeePercent <= MAX_OPERATOR_FEE_PERCENT, "UP borrow module: INCORRECT_FEE_VALUE");
+
+        operatorFeePercent = _operatorFeePercent;
+        emit OperatorFeeChanged(_operatorFeePercent);
     }
 
     function setCustomParam(uint _param, bytes32 _value) public onlyManager {

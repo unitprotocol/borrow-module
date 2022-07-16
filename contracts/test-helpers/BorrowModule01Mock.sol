@@ -8,7 +8,7 @@ contract BorrowModule01Mock is BorrowModule01 {
 
     constructor(address _parametersStorage) BorrowModule01(_parametersStorage) {}
 
-    function _calcFeeAmount_tests(address _asset, uint _amount) external view returns (uint _feeAmount, uint _amountWithoutFee) {
+    function _calcFeeAmount_tests(address _asset, uint _amount) external view returns (uint _feeAmount, uint _operatorFeeAmount, uint _amountWithoutFee) {
         return super._calcFeeAmount(_asset, _amount);
     }
 
