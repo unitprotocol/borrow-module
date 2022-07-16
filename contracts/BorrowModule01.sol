@@ -67,6 +67,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
     }
 
     event AuctionStarted(uint indexed loanId, address indexed borrower);
+    event AuctionInterestRateMaxUpdated(uint indexed loanId, address indexed borrower, uint16 newInterestRateMax);
     event AuctionCancelled(uint indexed loanId, address indexed borrower);
 
     event LoanIssued(uint indexed loanId, address indexed lender);
@@ -124,6 +125,18 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         _params.collateral.getFrom(_params.collateralType, msg.sender, address(this), _params.collateralIdOrAmount);
 
         emit AuctionStarted(_loanId, msg.sender);
+    }
+
+    function updateAuctionInterestRateMax(uint _loanId, uint16 _newInterestRateMax) external nonReentrant {
+        Loan storage loan = requireLoan(_loanId);
+        require(loan.auctionInfo.borrower == msg.sender, 'UP borrow module: AUTH_FAILED');
+        require(loan.state == LoanState.AuctionStarted, 'UP borrow module: INVALID_LOAN_STATE');
+        require(loan.auctionInfo.startTS + parameters.getAuctionDuration() <= block.timestamp, 'UP borrow module: TOO_EARLY_UPDATE');
+        require(_newInterestRateMax > loan.auctionInfo.interestRateMax, 'UP borrow module: NEW_RATE_TOO_SMALL');
+
+        loan.auctionInfo.interestRateMax = _newInterestRateMax;
+
+        emit AuctionInterestRateMaxUpdated(_loanId, msg.sender, _newInterestRateMax);
     }
 
     function cancelAuction(uint _loanId) external nonReentrant {

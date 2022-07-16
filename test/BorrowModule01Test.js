@@ -25,6 +25,8 @@ const ASSET_TYPE_ERC721 = 2;
 
 const PARAM_AUCTION_DURATION = 0;
 
+const AUCTION_DURATION = 8 * 3600;
+
 let context;
 
 describe("BorrowModule01", function () {
@@ -43,7 +45,7 @@ describe("BorrowModule01", function () {
         this.erc721token4 = updateERC721(await deployContract("ERC721Token"));
 
         this.parameters = await deployContract("ParametersStorage", this.treasury.address);
-        await this.parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, 8 * 3600);
+        await this.parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, AUCTION_DURATION);
 
         this.module = await deployContract("BorrowModule01Mock", this.parameters.address); // in mock some internal methods are made public
     });
@@ -388,8 +390,96 @@ describe("BorrowModule01", function () {
         expect(await this.erc721token1.ownerOf(1)).to.equal(this.borrower1.address)
         expect(await this.module.getActiveAuctionsCount()).to.equal(0);
         expect(toDict(await this.module.loans(1))).to.deep.equal(loan1)
+    });
 
+    it("updateInterestRateMax edge cases", async function () {
+        // for collateral
+        await this.erc20token1.transfer(this.borrower1.address, ether(10000));
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(10000));
 
+        // for accept auction
+        await this.erc20token2.transfer(this.lender1.address, ether(10000));
+        await this.erc20token2.connect(this.lender1).approve(this.module.address, ether(10000));
+
+        // for repay
+        await this.erc20token2.transfer(this.borrower1.address, ether(10000));
+        await this.erc20token2.connect(this.borrower1).approve(this.module.address, ether(10000));
+
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+
+        ///////////
+
+        await expect(
+			this.module.connect(this.borrower1).updateAuctionInterestRateMax(1, 5)
+		).to.be.revertedWith("INVALID_LOAN_ID");
+
+        await expect(
+			this.module.connect(this.borrower2).updateAuctionInterestRateMax(0, 5)
+		).to.be.revertedWith("AUTH_FAILED");
+
+        /////////// update already cancelled
+        await this.module.connect(this.borrower1).cancelAuction(0)
+        await expect(
+			this.module.connect(this.borrower1).updateAuctionInterestRateMax(0, 5)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// cancel issued
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await this.module.connect(this.lender1).accept(1);
+        await expect(
+			this.module.connect(this.borrower1).updateAuctionInterestRateMax(1, 5)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// cancel finished
+        await this.module.connect(this.borrower1).repay(1);
+        await expect(
+			this.module.connect(this.borrower1).updateAuctionInterestRateMax(1, 5)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        /////////// cancel liquidated
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await this.module.connect(this.lender1).accept(2);
+        await network.provider.send("evm_increaseTime", [366*24*3600]);
+        await network.provider.send("evm_mine");
+        await this.module.connect(this.lender1).liquidate(2);
+        await expect(
+			this.module.connect(this.borrower1).updateAuctionInterestRateMax(2, 5)
+		).to.be.revertedWith("INVALID_LOAN_STATE");
+
+        ///////////
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await expect(
+			this.module.connect(this.borrower1).updateAuctionInterestRateMax(3, 5)
+		).to.be.revertedWith("TOO_EARLY_UPDATE");
+
+        ///////////
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+        await network.provider.send("evm_increaseTime", [AUCTION_DURATION + 1]);
+        await network.provider.send("evm_mine");
+        await expect(
+			this.module.connect(this.borrower1).updateAuctionInterestRateMax(3, 1000)
+		).to.be.revertedWith("NEW_RATE_TOO_SMALL");
+    });
+
+    it("updateInterestRateMax", async function () {
+        await this.erc20token1.transfer(this.borrower1.address, ether(50));
+        await this.erc20token1.connect(this.borrower1).approve(this.module.address, ether(50));
+
+        await this.erc20token2.transfer(this.lender1.address, ether(10000));
+        await this.erc20token2.connect(this.lender1).approve(this.module.address, ether(10000));
+
+        ///// erc20 collateral
+        await this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams());
+
+        await network.provider.send("evm_increaseTime", [AUCTION_DURATION + 1]);
+        await network.provider.send("evm_mine");
+
+        await this.module.connect(this.borrower1).updateAuctionInterestRateMax(0, 1001)
+
+        await this.module.connect(this.lender1).accept(0);
+        const loan = await ERC20Loan({auctionInfo: {startTS: await getBlockTs(null, -3), interestRateMax: 1001}, interestRate: 1001});
+
+        expect(toDict(await this.module.loans(0))).to.deep.equal(loan)
     });
 
     it("accept edge cases", async function () {
@@ -905,8 +995,9 @@ function ERC721AuctionStartParams(paramsToReplace) {
     }
 }
 
-async function getBlockTs(blockNumber = null) {
-    return (await ethers.provider.getBlock(blockNumber ?? await ethers.provider.getBlockNumber())).timestamp;
+async function getBlockTs(blockNumber = null, blockNumberRelative = null) {
+    const calcedBlockNumber = blockNumber ?? await ethers.provider.getBlockNumber();
+    return (await ethers.provider.getBlock(calcedBlockNumber + (blockNumberRelative ?? 0) )).timestamp;
 }
 
 async function getPrevBlockTs() {
