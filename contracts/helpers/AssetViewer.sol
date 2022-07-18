@@ -11,6 +11,8 @@ import "../Assets01.sol";
 contract AssetViewer {
     using ERC165Checker for address;
 
+    uint internal constant GAS_AMOUNT_FOR_EXTERNAL_CALLS = 200000;
+
     struct Asset {
         address addr;
         Assets01.AssetType assetType;
@@ -32,7 +34,7 @@ contract AssetViewer {
                     assetType = Assets01.AssetType.ERC20;
                 }
 
-                try IERC20Metadata(_assets[i]).balanceOf{gas: 30000}(_user) // as in IERC721
+                try IERC20Metadata(_assets[i]).balanceOf{gas: GAS_AMOUNT_FOR_EXTERNAL_CALLS}(_user) // as in IERC721
                     returns (uint balance)
                 {
                     userBalance = balance;
@@ -41,7 +43,7 @@ contract AssetViewer {
                 }
 
                 if (assetType == Assets01.AssetType.ERC20) {
-                    try IERC20Metadata(_assets[i]).decimals{gas: 30000}()
+                    try IERC20Metadata(_assets[i]).decimals{gas: GAS_AMOUNT_FOR_EXTERNAL_CALLS}()
                         returns (uint8 _decimals)
                     {
                         decimals = _decimals;

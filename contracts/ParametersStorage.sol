@@ -52,8 +52,7 @@ contract ParametersStorage is IParametersStorage, Auth {
     }
 
     /**
-     * @notice Only manager is able to call this function
-     * @dev Grants and revokes manager's status of any address
+     * @notice Grants and revokes manager's status of any address
      * @param _who The target address
      * @param _permit The permission flag
      **/
@@ -68,8 +67,7 @@ contract ParametersStorage is IParametersStorage, Auth {
     }
 
     /**
-     * @notice Only manager is able to call this function
-     * @dev Sets the treasury address
+     * @notice Sets the treasury address
      * @param _treasury The new treasury address
      **/
     function setTreasury(address _treasury) external onlyManager {
@@ -79,8 +77,7 @@ contract ParametersStorage is IParametersStorage, Auth {
     }
 
     /**
-     * @notice Only manager is able to call this function
-     * @dev Sets the operator treasury address
+     * @notice Sets the operator treasury address
      * @param _operatorTreasury The new operator treasury address
      **/
     function setOperatorTreasury(address _operatorTreasury) external onlyManager {
