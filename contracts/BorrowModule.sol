@@ -9,14 +9,16 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./Auth.sol";
-import "./Parameters01.sol";
-import "./Assets01.sol";
+import "./Parameters.sol";
+import "./Assets.sol";
 
 
-contract BorrowModule01 is Auth, ReentrancyGuard {
-    using Parameters01 for IParametersStorage;
-    using Assets01 for address;
+contract BorrowModule is IVersioned, Auth, ReentrancyGuard {
+    using Parameters for IParametersStorage;
+    using Assets for address;
     using EnumerableSet for EnumerableSet.UintSet;
+
+    string public constant VERSION = '0.1.0';
 
     enum LoanState { WasNotCreated, AuctionStarted, AuctionCancelled, Issued, Finished, Liquidated }
 
@@ -37,7 +39,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         uint32 startTS;
         uint16 interestRate;
         address collateral;
-        Assets01.AssetType collateralType;
+        Assets.AssetType collateralType;
 
         // slot 256
         uint collateralIdOrAmount;
@@ -59,7 +61,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         uint16 interestRateMax;
 
         address collateral;
-        Assets01.AssetType collateralType;
+        Assets.AssetType collateralType;
         uint collateralIdOrAmount;
 
         address debtCurrency;
@@ -88,7 +90,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         require(0 < _params.durationDays &&_params.durationDays <= MAX_DURATION_DAYS, 'UP borrow module: INVALID_LOAN_DURATION');
         require(0 < _params.interestRateMin && _params.interestRateMin <= _params.interestRateMax, 'UP borrow module: INVALID_INTEREST_RATE');
         require(_params.collateral != address(0), 'UP borrow module: INVALID_COLLATERAL');
-        require(_params.collateralType == Assets01.AssetType.ERC721 || _params.collateralIdOrAmount > 0, 'UP borrow module: INVALID_COLLATERAL_AMOUNT');
+        require(_params.collateralType == Assets.AssetType.ERC721 || _params.collateralIdOrAmount > 0, 'UP borrow module: INVALID_COLLATERAL_AMOUNT');
         require(_params.debtCurrency != address(0) && _params.debtAmount > 0, 'UP borrow module: INVALID_DEBT_CURRENCY');
         _calcTotalDebt(_params.debtAmount, _params.interestRateMax, _params.durationDays); // just check that there is no overflow on total debt
 
@@ -171,14 +173,14 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
 
         (uint feeAmount, uint operatorFeeAmount, uint amountWithoutFee) = _calcFeeAmount(loan.debtCurrency, loan.debtAmount);
 
-        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, address(this), loan.debtAmount);
+        loan.debtCurrency.getFrom(Assets.AssetType.ERC20, msg.sender, address(this), loan.debtAmount);
         if (feeAmount > 0) {
-            loan.debtCurrency.sendTo(Assets01.AssetType.ERC20, parameters.treasury(), feeAmount);
+            loan.debtCurrency.sendTo(Assets.AssetType.ERC20, parameters.treasury(), feeAmount);
         }
         if (operatorFeeAmount > 0) {
-            loan.debtCurrency.sendTo(Assets01.AssetType.ERC20, parameters.operatorTreasury(), operatorFeeAmount);
+            loan.debtCurrency.sendTo(Assets.AssetType.ERC20, parameters.operatorTreasury(), operatorFeeAmount);
         }
-        loan.debtCurrency.sendTo(Assets01.AssetType.ERC20, loan.auctionInfo.borrower, amountWithoutFee);
+        loan.debtCurrency.sendTo(Assets.AssetType.ERC20, loan.auctionInfo.borrower, amountWithoutFee);
 
         emit LoanIssued(_loanId, msg.sender);
     }
@@ -195,7 +197,7 @@ contract BorrowModule01 is Auth, ReentrancyGuard {
         require(activeLoans.remove(_loanId), 'UP borrow module: BROKEN_STRUCTURE');
 
         uint totalDebt = _calcTotalDebt(loan.debtAmount, loan.interestRate, loan.durationDays);
-        loan.debtCurrency.getFrom(Assets01.AssetType.ERC20, msg.sender, loan.lender, totalDebt);
+        loan.debtCurrency.getFrom(Assets.AssetType.ERC20, msg.sender, loan.lender, totalDebt);
         loan.collateral.sendTo(loan.collateralType, loan.auctionInfo.borrower, loan.collateralIdOrAmount);
 
         emit LoanRepaid(_loanId, msg.sender);

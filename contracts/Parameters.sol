@@ -8,7 +8,7 @@ import "./interfaces/IParametersStorage.sol";
  * @dev After new parameter is introduced new lib Parameters(n+1) inherited from Parameters(n) must be created
  * @dev Then use Parameters(n+1) for IParametersStorage
  */
-library Parameters01 {
+library Parameters {
 
     /// @dev auction duration in seconds
     uint public constant PARAM_AUCTION_DURATION = 0;

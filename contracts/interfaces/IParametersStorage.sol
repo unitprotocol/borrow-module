@@ -2,7 +2,10 @@
 pragma solidity ^0.8.0;
 pragma abicoder v2;
 
-interface IParametersStorage {
+import "./IVersioned.sol";
+
+
+interface IParametersStorage is IVersioned {
 
     struct CustomFee {
         bool enabled; // is custom fee for asset enabled

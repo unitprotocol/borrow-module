@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: bsl-1.1
 pragma solidity ^0.8.0;
 
-import "../BorrowModule01.sol";
+import "../BorrowModule.sol";
 import "hardhat/console.sol";
 
-contract BorrowModule01Mock is BorrowModule01 {
+contract BorrowModuleMock is BorrowModule {
 
-    constructor(address _parametersStorage) BorrowModule01(_parametersStorage) {}
+    constructor(address _parametersStorage) BorrowModule(_parametersStorage) {}
 
     function _calcFeeAmount_tests(address _asset, uint _amount) external view returns (uint _feeAmount, uint _operatorFeeAmount, uint _amountWithoutFee) {
         return super._calcFeeAmount(_asset, _amount);

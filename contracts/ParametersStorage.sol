@@ -8,6 +8,8 @@ import "./interfaces/IParametersStorage.sol";
 
 contract ParametersStorage is IParametersStorage, Auth {
 
+    string public constant VERSION = '0.1.0';
+
     uint public constant BASIS_POINTS_IN_1_PERCENT = 100;
     uint public constant MAX_FEE_BASIS_POINTS = 10 * BASIS_POINTS_IN_1_PERCENT;
     uint public constant MAX_OPERATOR_FEE_PERCENT = 50;

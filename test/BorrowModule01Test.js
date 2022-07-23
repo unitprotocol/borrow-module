@@ -29,7 +29,7 @@ const AUCTION_DURATION = 8 * 3600;
 
 let context;
 
-describe("BorrowModule01", function () {
+describe("BorrowModule", function () {
     beforeEach(async function () {
         context = this;
         [this.deployer, this.borrower1, this.borrower2, this.lender1, this.lender2, this.treasury, this.operatorTreasury] = await ethers.getSigners();
@@ -47,7 +47,7 @@ describe("BorrowModule01", function () {
         this.parameters = await deployContract("ParametersStorage", this.treasury.address, this.operatorTreasury.address);
         await this.parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, AUCTION_DURATION);
 
-        this.module = await deployContract("BorrowModule01Mock", this.parameters.address); // in mock some internal methods are made public
+        this.module = await deployContract("BorrowModuleMock", this.parameters.address); // in mock some internal methods are made public
     });
 
     it("borrow module interfaces", async function () {
