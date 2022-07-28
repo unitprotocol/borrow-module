@@ -34,15 +34,15 @@ describe("BorrowModule", function () {
         context = this;
         [this.deployer, this.borrower1, this.borrower2, this.lender1, this.lender2, this.treasury, this.operatorTreasury] = await ethers.getSigners();
 
-        this.erc20token1 = await deployContract("ERC20Token", UINT_MAX);
-        this.erc20token2 = await deployContract("ERC20Token", UINT_MAX);
-        this.erc20token3 = await deployContract("ERC20Token", UINT_MAX);
-        this.erc20token4 = await deployContract("ERC20Token", UINT_MAX);
+        this.erc20token1 = await deployContract("ERC20Token", 'name', 'symbol', UINT_MAX);
+        this.erc20token2 = await deployContract("ERC20Token", 'name', 'symbol', UINT_MAX);
+        this.erc20token3 = await deployContract("ERC20Token", 'name', 'symbol', UINT_MAX);
+        this.erc20token4 = await deployContract("ERC20Token", 'name', 'symbol', UINT_MAX);
 
-        this.erc721token1 = updateERC721(await deployContract("ERC721Token"));
-        this.erc721token2 = updateERC721(await deployContract("ERC721Token"));
-        this.erc721token3 = updateERC721(await deployContract("ERC721Token"));
-        this.erc721token4 = updateERC721(await deployContract("ERC721Token"));
+        this.erc721token1 = updateERC721(await deployContract("ERC721Token", 'name', 'symbol'));
+        this.erc721token2 = updateERC721(await deployContract("ERC721Token", 'name', 'symbol'));
+        this.erc721token3 = updateERC721(await deployContract("ERC721Token", 'name', 'symbol'));
+        this.erc721token4 = updateERC721(await deployContract("ERC721Token", 'name', 'symbol'));
 
         this.parameters = await deployContract("ParametersStorage", this.treasury.address, this.operatorTreasury.address);
         await this.parameters.setCustomParamAsUint(PARAM_AUCTION_DURATION, AUCTION_DURATION);
@@ -77,7 +77,7 @@ describe("BorrowModule", function () {
 
         await expect(
 			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralType: ASSET_TYPE_UNKNOWN}))
-		).to.be.revertedWith("UNSUPPORTED_ASSET_TYPE");
+		).to.be.revertedWith("INVALID_COLLATERAL_TYPE");
 
         await expect(
 			this.module.connect(this.borrower1).startAuction(ERC20AuctionStartParams({collateralType: ASSET_TYPE_ERC721}))

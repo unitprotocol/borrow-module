@@ -30,10 +30,10 @@ contract BorrowModule is IVersioned, Auth, ReentrancyGuard {
     }
 
     struct Loan {
-        // slot 256 (Nested struct takes up the whole slot. We have to do this since error "Stack too deep..")
+        // slot 256 bits (Nested struct takes up the whole slot. We have to do this since error "Stack too deep..")
         AuctionInfo auctionInfo;
 
-        // slot 240
+        // slot 240 bits
         LoanState state;
         uint16 durationDays;
         uint32 startTS;
@@ -41,16 +41,16 @@ contract BorrowModule is IVersioned, Auth, ReentrancyGuard {
         address collateral;
         Assets.AssetType collateralType;
 
-        // slot 256
+        // slot 256 bits
         uint collateralIdOrAmount;
 
-        // slot 160
+        // slot 160 bits
         address lender;
 
-        // slot 160
+        // slot 160 bits
         address debtCurrency;
 
-        // slot 256
+        // slot 256 bits
         uint debtAmount;
     }
 
@@ -90,6 +90,7 @@ contract BorrowModule is IVersioned, Auth, ReentrancyGuard {
         require(0 < _params.durationDays &&_params.durationDays <= MAX_DURATION_DAYS, 'UP borrow module: INVALID_LOAN_DURATION');
         require(0 < _params.interestRateMin && _params.interestRateMin <= _params.interestRateMax, 'UP borrow module: INVALID_INTEREST_RATE');
         require(_params.collateral != address(0), 'UP borrow module: INVALID_COLLATERAL');
+        require(_params.collateralType != Assets.AssetType.Unknown, 'UP borrow module: INVALID_COLLATERAL_TYPE');
         require(_params.collateralType == Assets.AssetType.ERC721 || _params.collateralIdOrAmount > 0, 'UP borrow module: INVALID_COLLATERAL_AMOUNT');
         require(_params.debtCurrency != address(0) && _params.debtAmount > 0, 'UP borrow module: INVALID_DEBT_CURRENCY');
         _calcTotalDebt(_params.debtAmount, _params.interestRateMax, _params.durationDays); // just check that there is no overflow on total debt

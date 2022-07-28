@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: bsl-1.1
 pragma solidity ^0.8.0;
+pragma abicoder v2;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -20,6 +21,8 @@ contract AssetViewer is IVersioned {
         address addr;
         Assets.AssetType assetType;
         uint8 decimals;
+        string name;
+        string symbol;
         uint userBalance;
     }
 
@@ -28,6 +31,8 @@ contract AssetViewer is IVersioned {
         for (uint i=0; i<_assets.length; i++) {
             Assets.AssetType assetType;
             uint8 decimals;
+            string memory name;
+            string memory symbol;
             uint userBalance;
 
             if (Address.isContract(_assets[i])) {
@@ -37,10 +42,26 @@ contract AssetViewer is IVersioned {
                     assetType = Assets.AssetType.ERC20;
                 }
 
-                try IERC20Metadata(_assets[i]).balanceOf{gas: GAS_AMOUNT_FOR_EXTERNAL_CALLS}(_user) // as in IERC721
+                try IERC20Metadata(_assets[i]).balanceOf{gas: GAS_AMOUNT_FOR_EXTERNAL_CALLS}(_user) // both for erc20/721
                     returns (uint balance)
                 {
                     userBalance = balance;
+
+                    try IERC20Metadata(_assets[i]).name{gas: GAS_AMOUNT_FOR_EXTERNAL_CALLS}() // both for erc20/721
+                        returns (string memory _name)
+                    {
+                        name = _name;
+
+                        try IERC20Metadata(_assets[i]).symbol{gas: GAS_AMOUNT_FOR_EXTERNAL_CALLS}() // both for erc20/721
+                            returns (string memory _symbol)
+                        {
+                            symbol = _symbol;
+                        } catch (bytes memory) {
+                            assetType = Assets.AssetType.Unknown;
+                        }
+                    } catch (bytes memory) {
+                        assetType = Assets.AssetType.Unknown;
+                    }
                 } catch (bytes memory) {
                     assetType = Assets.AssetType.Unknown;
                 }
@@ -56,7 +77,7 @@ contract AssetViewer is IVersioned {
                 }
             }
 
-            _result[i] = Asset(_assets[i], assetType, decimals, userBalance);
+            _result[i] = Asset(_assets[i], assetType, decimals, name, symbol, userBalance);
         }
     }
 }
