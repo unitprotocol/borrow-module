@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: bsl-1.1
+/**
+ * Copyright 2022 Unit Protocol V2: Artem Zakharov (hello@unit.xyz).
+ */
 pragma solidity ^0.8.0;
 
 /// @title Contract supporting versioning using SemVer version scheme.
