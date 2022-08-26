@@ -27,6 +27,8 @@ async function main() {
     res = await parameters.setManager(deployer.address, false);
     await res.wait();
 
+    console.log("Setup finished");
+
     await new Promise(r => setTimeout(r, 100000)); // time to index new contracts
 
     await hre.run("verify:verify", {

@@ -35,6 +35,26 @@ module.exports = {
     etherscan: {
         // Your API key for Etherscan
         // Obtain one at https://etherscan.io/
-        apiKey: "KEY"
+        apiKey: "KEY",
+        customChains: [
+            {
+                chainId: 199,
+                urls: {
+                    apiURL: "https://api.bttcscan.com/api",
+                }
+            },
+            {
+                chainId: 42220,
+                urls: {
+                    apiURL: "https://api.celoscan.io/api",
+                }
+            },
+            {
+                chainId: 25,
+                urls: {
+                    apiURL: "https://api.cronoscan.com/api",
+                }
+            },
+        ]
     },
 };
